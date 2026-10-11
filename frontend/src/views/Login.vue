@@ -6,7 +6,12 @@
 
       <el-form :model="form" label-width="auto" style="max-width: 600px">
         <el-form-item>
-          <el-input size="large" v-model="form.name" placeholder="请输入账号" :prefix-icon="User" />
+          <el-input
+            size="large"
+            v-model="form.username"
+            placeholder="请输入账号"
+            :prefix-icon="User"
+          />
         </el-form-item>
         <el-form-item>
           <el-input
@@ -34,25 +39,33 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
 import { User, Lock } from '@element-plus/icons-vue'
+import { loginApi } from '@/api/auth'
+import { useUser } from '@/utils/user'
+const { saveLoginData } = useUser()
 
 const loadingValue = ref(false)
 
-const form = ref({
-  name: '',
+const form = reactive({
+  username: '',
   password: ''
 })
 
-const login = () => {
+const login = async () => {
   loadingValue.value = true
-  setTimeout(() => {
+  try {
+    const res = await loginApi(form)
+    saveLoginData(res.data)
+    if (res.code == 200) {
+      ElMessage.success('登录成功')
+      router.push('/manager/home')
+    }
+  } finally {
     loadingValue.value = false
-    ElMessage.success('登录成功')
-    router.push('/manager/home')
-  }, 2000)
+  }
 }
 </script>
 

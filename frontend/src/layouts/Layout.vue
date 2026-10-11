@@ -25,7 +25,7 @@
 
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="logout">退出登录</el-dropdown-item>
+                <el-dropdown-item @click="handleLogout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -65,8 +65,10 @@
 <script setup>
 import { Menu as IconMenu, House, Setting, User } from '@element-plus/icons-vue'
 import router from '@/router'
+import { logout } from '@/utils/auth'
 
-const logout = () => {
+const handleLogout = () => {
+  logout()
   router.push('/login')
 }
 </script>

@@ -1,5 +1,7 @@
 from fastapi import FastAPI,HTTPException
 from fastapi.exceptions import RequestValidationError
+from starlette.middleware.cors import CORSMiddleware
+
 from app.models.base import Base
 from app.core.database import engine
 from app.api import auth, user
@@ -17,6 +19,19 @@ Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI()
+
+
+origins = [
+    "http://127.0.0.1:5173",
+    "http://localhost:5173"
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_headers=["*"],
+    allow_methods=["*"],
+    allow_credentials=True,
+    )
 
 app.include_router(auth.router)
 app.include_router(user.router)
