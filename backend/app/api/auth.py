@@ -6,7 +6,7 @@ from app.core.database import get_db
 from app.core.response import Response
 from app.services import auth_service
 
-router = APIRouter(prefix="/api/auth", tags=["权限验证"])
+router = APIRouter(prefix="/auth", tags=["权限验证"])
 
 
 @router.post("/login")

@@ -38,4 +38,4 @@ def register(db: Session, payload: RegisterRequest):
     )
     db.add(user)
     db.commit()
-    db.flush()
+    db.refresh(user)
