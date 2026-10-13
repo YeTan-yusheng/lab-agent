@@ -21,7 +21,7 @@ def verify_login(db: Session, payload: LoginRequest) -> LoginResponse:
     # 创建token
     token = create_access_token(user.id)
 
-    return (LoginResponse(token=token, user=UserResponse.model_validate(user)),)
+    return LoginResponse(token=token, user=UserResponse.model_validate(user))
 
 
 def register(db: Session, payload: RegisterRequest):

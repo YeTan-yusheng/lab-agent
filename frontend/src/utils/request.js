@@ -20,7 +20,6 @@ service.interceptors.request.use(
   (err) => Promise.reject(err)
 )
 
-//返回拦截器
 service.interceptors.response.use(
   (res) => {
     const data = res.data
@@ -38,14 +37,15 @@ service.interceptors.response.use(
     if (err.response) {
       const httpStatusCode = err.response.status
       if (httpStatusCode == 401) {
+        ElMessage.error('登录状态已失效，请重新登录')
         logout()
         router.push('/login')
-        return Promise.reject(data)
+        return Promise.reject(err.data)
       } else {
         ElMessage.error(err.response.data?.message || '请求失败')
       }
     } else {
-      ElMessage.error('网络异常，请检测后端服务')
+      ElMessage.error('网络异常，请检查后端服务')
     }
     return Promise.reject(err)
   }

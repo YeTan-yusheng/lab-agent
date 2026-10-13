@@ -47,6 +47,7 @@ import router from '@/router'
 import { User, Lock } from '@element-plus/icons-vue'
 import { loginApi } from '@/api/auth'
 import { useUser } from '@/utils/user'
+
 const { saveLoginData } = useUser()
 
 const loadingValue = ref(false)
@@ -66,7 +67,7 @@ const form = reactive({
 const login = async () => {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
-  
+
   loadingValue.value = true
   try {
     const res = await loginApi(form)
@@ -75,8 +76,6 @@ const login = async () => {
       ElMessage.success('登录成功')
       await router.push('/manager/home')
     }
-  } catch (err) {
-    console.log(err)
   } finally {
     loadingValue.value = false
   }

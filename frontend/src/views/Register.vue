@@ -95,7 +95,6 @@ const register = async () => {
       await router.push('/login')
     }
   } catch (err) {
-    console.log(err)
     router.push('/register')
   } finally {
     loadingValue.value = false
