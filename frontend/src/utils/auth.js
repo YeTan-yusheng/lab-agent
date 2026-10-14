@@ -15,7 +15,7 @@ export function removeToken() {
 
 export function getUserInfo() {
   const str = localStorage.getItem(USER_KEY)
-  return str ? JSON.stringify(str) : null
+  return str ? JSON.parse(str) : null
 }
 
 export function setUserInfo(userInfo) {
