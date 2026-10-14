@@ -19,3 +19,8 @@ class UserUpdateRequest(BaseModel):
     phone: str | None = None
     email: str | None = None
     avatar: str | None = None
+
+
+class PasswordUpdateRequest(BaseModel):
+    old_password: str
+    new_password: str
