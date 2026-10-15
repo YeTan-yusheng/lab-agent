@@ -1,10 +1,12 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import select, or_, func
 
 from app.schemas.user import UserResponse
 from app.models.user import User
 from app.schemas.user import UserUpdateRequest, PasswordUpdateRequest
 from app.core.password import verify_password, hash_password
 from app.core.exceptions import BusinessException
+from app.core.response import PageResponse
 
 
 def get_user_info(user: User) -> UserResponse:
@@ -30,3 +32,22 @@ def update_password(db: Session, user: User, payload: PasswordUpdateRequest):
     user.password = hash_password(payload.new_password)
     db.commit()
     db.refresh(user)
+
+
+def get_user_page_list(
+    db: Session, page: int, page_size: int, keywords: str | None = None
+):
+    stmt = select(User)
+    if keywords:
+        stmt = stmt.where(
+            or_(User.username.ilike(f"%{keywords}%"), User.name.ilike(f"%{keywords}%"))
+        )
+
+    total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar()
+    items = db.execute(
+        stmt.order_by(User.id.desc()).offset((page - 1) * page_size).limit(page_size)
+    ).scalars()
+
+    return PageResponse(
+        list=[UserResponse.model_validate(item) for item in items], total=total
+    )
