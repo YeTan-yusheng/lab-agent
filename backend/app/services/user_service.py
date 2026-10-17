@@ -14,7 +14,7 @@ def get_user_info(user: User) -> UserResponse:
 
 
 def update_user_info(db: Session, user: User, payload: UserUpdateRequest):
-    user_dict = payload.model_dump(exclude_none=True)
+    user_dict = payload.model_dump(exclude_none=True, exclude=["role", "status"])
     for field, value in user_dict.items():
         setattr(user, field, value)
 
