@@ -8,7 +8,11 @@ from app.core.exceptions import BusinessException
 
 
 def get_labs_page_list(
-    db: Session, page: int, page_size: int, keywords: str | None = None
+    db: Session,
+    page: int,
+    page_size: int,
+    keywords: str | None = None,
+    status: int | None = None,
 ) -> PageResponse:
     """分页模糊查询用户列表"""
     stmt = select(Lab)
@@ -16,6 +20,8 @@ def get_labs_page_list(
         stmt = stmt.where(
             or_(Lab.name.ilike(f"%{keywords}%"), Lab.location.ilike(f"%{keywords}%"))
         )
+    if status:
+        stmt = stmt.where(Lab.status == status)
 
     total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar()
 
@@ -26,6 +32,13 @@ def get_labs_page_list(
     return PageResponse(
         list=[LabResponse.model_validate(item) for item in items], total=total
     )
+
+
+def get_lab(db: Session, lab_id: int) -> LabResponse:
+    lab = db.execute(select(Lab).where(Lab.id == lab_id)).scalar_one_or_none()
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+    return LabResponse.model_validate(lab)
 
 
 def create_lab(db: Session, payload: LabCreateRequest) -> LabResponse:

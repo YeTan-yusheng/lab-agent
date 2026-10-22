@@ -2,7 +2,9 @@
   <div>
     <el-card>
       <template #header>
-        <div style="font-size: 16px; font-weight: bold">实验室管理</div>
+        <div style="font-size: 16px; font-weight: bold">
+          <span>实验室管理</span>
+        </div>
       </template>
       <div style="margin-bottom: 10px">
         <el-input
