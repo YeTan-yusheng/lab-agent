@@ -62,7 +62,7 @@ def update_lab(db: Session, lab_id: int, payload: LabUpdateRequest) -> LabRespon
 
 def delete_lab(db: Session, lab_id: int):
     """实验室管理-删除实验室"""
-    lab = db.query(Lab).filter(Lab.id == lab_id).first()
+    lab = db.execute(select(Lab).where(Lab.id == lab_id)).scalar_one_or_none()
     if not lab:
         raise BusinessException(message="实验室不存在")
     db.delete(lab)
