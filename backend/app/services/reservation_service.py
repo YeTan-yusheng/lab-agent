@@ -1,13 +1,75 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import func, select
 from datetime import datetime
 
 from app.models.user import User
 from app.models.lab import Lab
 from app.models.equipment import Equipment
 from app.models.reservation import Reservation
-from app.schemas.reservation import ReservationCreateRequest
+from app.schemas.reservation import ReservationCreateRequest, ReservationResponse
 from app.core.exceptions import BusinessException
+from app.core.response import PageResponse
+
+
+def get_reservation_page_list(
+    db: Session,
+    current_user: User,
+    page: int,
+    page_size: int,
+    status: int | None = None,
+):
+    """查询预约记录"""
+    stmt = select(Reservation)
+    if current_user.role != "admin":
+        stmt = stmt.where(Reservation.user_id == current_user.id)
+    else:
+        stmt = stmt.where(Reservation.status != 3)
+    if status is not None:
+        stmt = stmt.where(Reservation.status == status)
+    total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar()
+    items = db.execute(
+        stmt.order_by(Reservation.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).scalars()
+
+    result = []
+    for item in items:
+        res = ReservationResponse.model_validate(item)
+        res.user_name = item.user.name if item.user else None
+        res.lab_name = item.lab.name if item.lab else None
+        res.equipment_name = item.equipment.name if item.equipment else None
+        res.type = "设备" if item.equipment_id else "实验室"
+        result.append(res)
+    return PageResponse(list=result, total=total)
+
+
+def cancel_reservation(db: Session, reservation_id: int, current_user: User):
+    reservation = db.execute(
+        select(Reservation).where(Reservation.id == reservation_id)
+    ).scalar_one_or_none()
+    if not reservation:
+        raise BusinessException(message="预约不存在")
+    if reservation.user_id != current_user.id:
+        raise BusinessException(message="无权限", code=403)
+    if reservation.status != 0:
+        raise BusinessException(message="当前状态无法取消")
+    reservation.status = 3
+    db.commit()
+
+
+def audit_reservation(db: Session, reservation_id: int, status: int):
+    reservation = db.execute(
+        select(Reservation).where(Reservation.id == reservation_id)
+    ).scalar_one_or_none()
+    if status not in [1, 2]:
+        raise BusinessException(message="审核状态错误")
+    if not reservation:
+        raise BusinessException(message="预约不存在")
+    if reservation.status != 0:
+        raise BusinessException(message="当前状态不支持审核")
+    reservation.status = status
+    db.commit()
 
 
 def creaet_reservation(
