@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, select
 from datetime import datetime
+import asyncio
 
 from app.models.user import User
 from app.models.lab import Lab
@@ -9,6 +10,7 @@ from app.models.reservation import Reservation
 from app.schemas.reservation import ReservationCreateRequest, ReservationResponse
 from app.core.exceptions import BusinessException
 from app.core.response import PageResponse
+from app.core.database import SessionLocal
 
 
 def get_reservation_page_list(
@@ -136,3 +138,28 @@ def creaet_reservation(
     )
     db.add(resvervation_model)
     db.commit()
+
+
+# 过期自动释放未审核预约
+def expire_pending_reservations():
+    db = SessionLocal()
+    try:
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        now_time = now.strftime("%H:%M")
+        items = db.execute(select(Reservation).where(Reservation.status == 0)).scalars()
+        changed = False
+        for item in items:
+            if item.date < today or (item.date == today and item.end_time <= now_time):
+                item.status = 3
+                changed = True
+            if changed:
+                db.commit()
+    finally:
+        db.close()
+
+
+async def run_expire_scan():
+    while True:
+        expire_pending_reservations()
+        await asyncio.sleep(60)
