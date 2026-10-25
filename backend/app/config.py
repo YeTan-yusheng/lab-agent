@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     jwt_expire_hours: int = 24
     jwt_algorithm: str = "HS256"
 
+    llm_api_key: str
+    llm_base_url: str
+    llm_model: str
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
         env_file_encoding="utf-8",
