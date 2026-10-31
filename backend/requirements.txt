@@ -7,3 +7,6 @@ bcrypt==5.0.0
 PyJWT==2.13.0
 openai==3.37.0
 chromadb==1.5.9
+langgraph==1.2.18
+langchain-openai==1.7.3
+langchain-core==1.7.3
