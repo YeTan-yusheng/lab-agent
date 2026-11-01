@@ -121,8 +121,8 @@ def bulid_tools(db: Session, current_user: User):
 
     @tool
     def get_today() -> str:
-        """获取当前时间 格式YYYY-MM-DD"""
-        return datetime.now().strftime("%Y-%m-%d")
+        """获取当前时间 格式YYYY-MM-DD HH:MM:SS"""
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     return [
         search_lab_docs,
