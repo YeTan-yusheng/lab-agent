@@ -3,6 +3,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.core.response import Response
+from app.core.permissions import RoleValidationError
 
 
 class BusinessException(Exception):
@@ -12,6 +13,14 @@ class BusinessException(Exception):
         self.message = message
         self.code = code
         super().__init__(message)
+
+
+async def role_validation_exception_handler(request: Request, exc: RoleValidationError):
+    """角色校验异常处理器"""
+    return JSONResponse(
+        status_code=422,
+        content=Response.error(code=exc.code, message=exc.message).model_dump(),
+    )
 
 
 async def bussiness_excpetion_hadler(request: Request, exc: BusinessException):

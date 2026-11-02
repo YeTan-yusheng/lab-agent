@@ -12,10 +12,12 @@ from app.api import app as api_router
 from app.config import UPLOAD_DIR
 from app.core.exceptions import (
     BusinessException,
+    RoleValidationError,
     bussiness_excpetion_hadler,
     http_excpetion_hadler,
     validation_excpetion_hadler,
     global_excpetion_hadler,
+    role_validation_exception_handler,
 )
 
 import app.models
@@ -47,6 +49,7 @@ app.add_middleware(
 app.add_exception_handler(BusinessException, bussiness_excpetion_hadler)
 app.add_exception_handler(HTTPException, http_excpetion_hadler)
 app.add_exception_handler(RequestValidationError, validation_excpetion_hadler)
+app.add_exception_handler(RoleValidationError, role_validation_exception_handler)
 # 全局的异常兜底，必须放在最后注册！！
 app.add_exception_handler(Exception, global_excpetion_hadler)
 

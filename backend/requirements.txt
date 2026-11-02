@@ -10,3 +10,4 @@ chromadb==1.5.9
 langgraph==1.2.18
 langchain-openai==1.7.3
 langchain-core==1.7.3
+pytest==9.2.0
