@@ -20,10 +20,6 @@ from app.core.exceptions import (
     role_validation_exception_handler,
 )
 
-import app.models
-
-Base.metadata.create_all(bind=engine)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

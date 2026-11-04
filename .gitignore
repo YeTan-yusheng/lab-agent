@@ -115,4 +115,4 @@ checkpoints.db*
 data/
 .workbuddy/
 uploads/
-
+*.sql
