@@ -2,13 +2,14 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.core.response import Response
 from app.models.equipment import Equipment
-from app.dependencies.auth import get_current_admin, get_current_user
+from app.dependencies.auth import get_current_user, require_capability
 from app.schemas.equipment import (
     EquipmentCreateRequest,
     EquipmentUpdateRequest,
 )
 from app.services import equipment_service
 from app.core.database import get_db
+from app.core.permissions import Capability
 
 router = APIRouter(prefix="/equipment", tags=["实验室设备信息接口"])
 
@@ -31,7 +32,7 @@ def get_equipment_list(
 @router.post("")
 def create_equipment(
     payload: EquipmentCreateRequest,
-    current_user: Equipment = Depends(get_current_admin),
+    current_user: Equipment = Depends(require_capability(Capability.manage_resources)),
     db: Session = Depends(get_db),
 ):
     res = equipment_service.create_equipment(db, payload)
@@ -42,7 +43,7 @@ def create_equipment(
 def update_equipment(
     equipment_id: int,
     payload: EquipmentUpdateRequest,
-    current_user: Equipment = Depends(get_current_admin),
+    current_user: Equipment = Depends(require_capability(Capability.manage_resources)),
     db: Session = Depends(get_db),
 ):
     res = equipment_service.update_equipment(db, equipment_id, payload)
@@ -52,7 +53,7 @@ def update_equipment(
 @router.delete("/{equipment_id}")
 def delete_equipment(
     equipment_id: int,
-    current_user: Equipment = Depends(get_current_admin),
+    current_user: Equipment = Depends(require_capability(Capability.manage_resources)),
     db: Session = Depends(get_db),
 ):
     equipment_service.delete_equipment(db, equipment_id)

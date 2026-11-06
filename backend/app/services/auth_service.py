@@ -19,7 +19,7 @@ def verify_login(db: Session, payload: LoginRequest) -> LoginResponse:
     if user.status != 1:
         raise BusinessException(code=401, message="账号被禁用")
     # 创建token
-    token = create_access_token(user.id)
+    token = create_access_token(user.id, user.token_version)
 
     return LoginResponse(token=token, user=UserResponse.model_validate(user))
 

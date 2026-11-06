@@ -3,10 +3,11 @@ from sqlalchemy.orm import Session
 
 from app.core.response import Response
 from app.core.database import get_db
-from app.dependencies.auth import get_current_admin, get_current_user
+from app.dependencies.auth import require_capability, get_current_user
 from app.models.user import User
 from app.schemas.lab import LabCreateRequest, LabUpdateRequest
 from app.services import lab_service
+from app.core.permissions import Capability
 
 router = APIRouter(prefix="/lab", tags=["实验室管理"])
 
@@ -37,7 +38,7 @@ def get_lab(
 @router.post("")
 def create_lab(
     payload: LabCreateRequest,
-    current_user: User = Depends(get_current_admin),
+    current_user: User = Depends(require_capability(Capability.manage_resources)),
     db: Session = Depends(get_db),
 ):
     res = lab_service.create_lab(db, payload)
@@ -48,7 +49,7 @@ def create_lab(
 def update_lab(
     lab_id: int,
     payload: LabUpdateRequest,
-    current_user: User = Depends(get_current_admin),
+    current_user: User = Depends(require_capability(Capability.manage_resources)),
     db: Session = Depends(get_db),
 ):
     res = lab_service.update_lab(db, lab_id, payload)
@@ -58,7 +59,7 @@ def update_lab(
 @router.delete("/{lab_id}")
 def delete_lab(
     lab_id: int,
-    current_user: User = Depends(get_current_admin),
+    current_user: User = Depends(require_capability(Capability.manage_resources)),
     db: Session = Depends(get_db),
 ):
     lab_service.delete_lab(db, lab_id)

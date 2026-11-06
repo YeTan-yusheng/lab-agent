@@ -96,7 +96,7 @@ def bulid_tools(db: Session, current_user: User):
                 end_time=end_time,
                 remark=remark,
             )
-            reservation_service.creaet_reservation(db, current_user, payload)
+            reservation_service.create_reservation(db, current_user, payload)
             return json.dumps(
                 {
                     "ok": True,

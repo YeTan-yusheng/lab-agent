@@ -236,3 +236,9 @@ def capability_names(capabilities: frozenset[Capability]) -> list[str]:
             capabilities, key=lambda c: CAPABILITY_ORDER.index(c.value)
         )
     ]
+
+
+def booking_capability(equipment_id: int | None) -> Capability:
+    return (
+        Capability.book_equipment if equipment_id is not None else Capability.book_lab
+    )

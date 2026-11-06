@@ -11,6 +11,7 @@ from app.schemas.reservation import ReservationCreateRequest, ReservationRespons
 from app.core.exceptions import BusinessException
 from app.core.response import PageResponse
 from app.core.database import SessionLocal
+from app.core.permissions import Capability, validate_roles, booking_capability
 
 
 def get_reservation_page_list(
@@ -21,11 +22,15 @@ def get_reservation_page_list(
     status: int | None = None,
 ):
     """查询预约记录"""
+    role_codes = [item.role_code for item in current_user.roles]
+    role_profile = validate_roles(role_codes)
+
     stmt = select(Reservation)
-    if current_user.role != "admin":
-        stmt = stmt.where(Reservation.user_id == current_user.id)
-    else:
+
+    if role_profile.has(Capability.audit_reservation):
         stmt = stmt.where(Reservation.status != 3)
+    else:
+        stmt = stmt.where(Reservation.user_id == current_user.id)
     if status is not None:
         stmt = stmt.where(Reservation.status == status)
     total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar()
@@ -60,7 +65,15 @@ def cancel_reservation(db: Session, reservation_id: int, current_user: User):
     db.commit()
 
 
-def audit_reservation(db: Session, reservation_id: int, status: int):
+def audit_reservation(
+    db: Session, current_user: User, reservation_id: int, status: int
+):
+    """审核预约记录"""
+    role_codes = [item.role_code for item in current_user.roles]
+    role_profile = validate_roles(role_codes)
+    if not role_profile.has(Capability.audit_reservation):
+        raise BusinessException(code=403, message="无权限审核预约记录")
+
     reservation = db.execute(
         select(Reservation).where(Reservation.id == reservation_id)
     ).scalar_one_or_none()
@@ -74,10 +87,16 @@ def audit_reservation(db: Session, reservation_id: int, status: int):
     db.commit()
 
 
-def creaet_reservation(
+def create_reservation(
     db: Session, current_user: User, payload: ReservationCreateRequest
 ):
     """创建预约记录"""
+    role_codes = [item.role_code for item in current_user.roles]
+    role_profile = validate_roles(role_codes)
+    required = booking_capability(payload.equipment_id)
+    if not role_profile.has(required):
+        raise BusinessException(code=403, message="无权限预约该类型资源")
+
     now = datetime.now()
     current_date = now.strftime("%Y-%m-%d")
     current_time = now.strftime("%H:%M")
@@ -99,7 +118,7 @@ def creaet_reservation(
         raise BusinessException(message="预约时间不能晚于实验室的关闭时间")
 
     # equipment_id 不为空 则表示这次是预约的实验室设备
-    if payload.equipment_id:
+    if payload.equipment_id is not None:
         equipment = db.execute(
             select(Equipment).where(Equipment.id == payload.equipment_id)
         ).scalar_one_or_none()
