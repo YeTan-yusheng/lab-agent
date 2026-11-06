@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     llm_base_url: str
     llm_model: str
 
+    app_env: str = "development"
+    seed_default_password: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
         env_file_encoding="utf-8",
