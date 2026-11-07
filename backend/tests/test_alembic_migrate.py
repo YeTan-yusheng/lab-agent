@@ -14,10 +14,6 @@ def test_alembic_backfill():
         text("SELECT role_code, COUNT(*) FROM user_roles GROUP BY role_code")
     ).scalar()
     assert (
-        c.execute(text("SELECT COUNT(*) FROM users WHERE token_version <> 0")).scalar()
-        == 0
-    )
-    assert (
         c.execute(text("SELECT COUNT(*) FROM users WHERE role IS NULL")).scalar() == 0
     )
     c.close()

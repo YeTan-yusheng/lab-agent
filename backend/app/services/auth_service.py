@@ -1,13 +1,14 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.user import User
+from app.models.user import User, UserRoles
 from app.schemas.auth import LoginRequest, LoginResponse, RegisterRequest
 from app.core.password import verify_password
-from app.schemas.user import UserResponse
 from app.core.jwt import create_access_token
 from app.core.exceptions import BusinessException
 from app.core.password import hash_password
+from app.core.permissions import Role, RoleValidationError
+from app.services.user_service import build_current_user
 
 
 def verify_login(db: Session, payload: LoginRequest) -> LoginResponse:
@@ -18,10 +19,15 @@ def verify_login(db: Session, payload: LoginRequest) -> LoginResponse:
     # 验证账号的状态
     if user.status != 1:
         raise BusinessException(code=401, message="账号被禁用")
+
+    try:
+        user_response = build_current_user(user)
+    except RoleValidationError as e:
+        raise BusinessException(code=401, message=f"账号角色异常")
     # 创建token
     token = create_access_token(user.id, user.token_version)
 
-    return LoginResponse(token=token, user=UserResponse.model_validate(user))
+    return LoginResponse(token=token, user=user_response)
 
 
 def register(db: Session, payload: RegisterRequest):
@@ -36,6 +42,13 @@ def register(db: Session, payload: RegisterRequest):
         role="student",
         status=1,
     )
+
     db.add(user)
+    db.flush()
+    db.add(
+        UserRoles(
+            user_id=user.id,
+            role_code=Role.student.value,
+        )
+    )
     db.commit()
-    db.refresh(user)

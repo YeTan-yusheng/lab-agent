@@ -14,6 +14,13 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CurrentUserResponse(UserResponse):
+    roles: list[str]
+    capabilities: list[str]
+    primary_role: str
+    display_name: str
+
+
 class UserCreateRequest(BaseModel):
     username: str
     password: str = "123456"

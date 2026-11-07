@@ -1,26 +1,30 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select, or_, func
 
-from app.schemas.user import UserResponse, UserCreateRequest
+from app.schemas.user import CurrentUserResponse, UserResponse, UserCreateRequest
 from app.models.user import User
 from app.schemas.user import UserUpdateRequest, PasswordUpdateRequest
 from app.core.password import verify_password, hash_password
 from app.core.exceptions import BusinessException
 from app.core.response import PageResponse
+from app.core.permissions import validate_roles
 
 
-def get_user_info(user: User) -> UserResponse:
-    return UserResponse.model_validate(user)
+def get_user_info(user: User) -> CurrentUserResponse:
+    """获取用户信息"""
+    return build_current_user(user)
 
 
-def update_user_info(db: Session, user: User, payload: UserUpdateRequest):
+def update_user_info(
+    db: Session, user: User, payload: UserUpdateRequest
+) -> CurrentUserResponse:
     user_dict = payload.model_dump(exclude_none=True, exclude=["role", "status"])
     for field, value in user_dict.items():
         setattr(user, field, value)
 
     db.commit()
     db.refresh(user)
-    return UserResponse.model_validate(user)
+    return build_current_user(user)
 
 
 def update_password(db: Session, user: User, payload: PasswordUpdateRequest):
@@ -30,6 +34,7 @@ def update_password(db: Session, user: User, payload: PasswordUpdateRequest):
         raise BusinessException(message="新密码不能与原密码相同")
 
     user.password = hash_password(payload.new_password)
+    user.token_version += 1
     db.commit()
     db.refresh(user)
 
@@ -105,3 +110,12 @@ def delete_user(db: Session, user_id: int, current_user: User):
 
     db.delete(user)
     db.commit()
+
+
+def build_current_user(user: User) -> CurrentUserResponse:
+    """构建当前用户响应"""
+    profile = validate_roles([role.role_code for role in user.roles])
+    return CurrentUserResponse(
+        **UserResponse.model_validate(user).model_dump(),
+        **profile.to_api(),
+    )
