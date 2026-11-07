@@ -5,7 +5,7 @@ from app.config import settings
 
 def create_access_token(user_id: int, token_version) -> str:
     """创建访问令牌"""
-    now = datetime.now(timezone.utc) # 时间以本地时区时间为主
+    now = datetime.now(timezone.utc)  # 时间以本地时区时间为主
     payload = {
         "user_id": user_id,
         "ver": token_version,
@@ -19,4 +19,9 @@ def create_access_token(user_id: int, token_version) -> str:
 
 
 def decode_access_token(token: str) -> dict:
-    return jwt.decode(token, settings.jwt_secret_key, algorithms=settings.jwt_algorithm)
+    return jwt.decode(
+        token,
+        settings.jwt_secret_key,
+        algorithms=settings.jwt_algorithm,
+        options={"require": ["exp", "iat", "user_id", "ver"]},
+    )

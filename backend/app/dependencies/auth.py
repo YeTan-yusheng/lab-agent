@@ -8,6 +8,7 @@ from app.models.user import User
 from app.core.jwt import decode_access_token
 from app.core.permissions import (
     RoleProfile,
+    get_role_profile,
     validate_roles,
     RoleValidationError,
     Capability,
@@ -42,8 +43,7 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="登录已失效请重新登录")
 
     try:
-        role_codes = [item.role_code for item in user.roles]
-        role_profile = validate_roles(role_codes)
+        role_profile = get_role_profile(user)
     except RoleValidationError as e:
         raise HTTPException(status_code=403, detail="非法的角色")
     request.state.role_profile = role_profile
@@ -57,7 +57,9 @@ def require_capability(capability: Capability):
     def _checker_capability(
         request: Request, current_user: User = Depends(get_current_user)
     ):
-        profile: RoleProfile = request.state.role_profile
+        profile: RoleProfile = request.state.role_profile or get_role_profile(
+            current_user
+        )
         if not profile.has(capability):
             raise HTTPException(status_code=403, detail="无权限访问")
         return current_user

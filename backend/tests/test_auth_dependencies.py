@@ -176,6 +176,7 @@ def _auth(user, ver=None):
         {
             "user_id": user.id,
             "ver": user.token_version if ver is None else ver,
+            "iat": datetime.now(timezone.utc),
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         }
     )

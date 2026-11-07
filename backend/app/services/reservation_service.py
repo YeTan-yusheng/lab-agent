@@ -11,7 +11,12 @@ from app.schemas.reservation import ReservationCreateRequest, ReservationRespons
 from app.core.exceptions import BusinessException
 from app.core.response import PageResponse
 from app.core.database import SessionLocal
-from app.core.permissions import Capability, validate_roles, booking_capability
+from app.core.permissions import (
+    Capability,
+    get_role_profile,
+    validate_roles,
+    booking_capability,
+)
 
 
 def get_reservation_page_list(
@@ -22,8 +27,7 @@ def get_reservation_page_list(
     status: int | None = None,
 ):
     """查询预约记录"""
-    role_codes = [item.role_code for item in current_user.roles]
-    role_profile = validate_roles(role_codes)
+    role_profile = get_role_profile(current_user)
 
     stmt = select(Reservation)
 
@@ -69,8 +73,7 @@ def audit_reservation(
     db: Session, current_user: User, reservation_id: int, status: int
 ):
     """审核预约记录"""
-    role_codes = [item.role_code for item in current_user.roles]
-    role_profile = validate_roles(role_codes)
+    role_profile = get_role_profile(current_user)
     if not role_profile.has(Capability.audit_reservation):
         raise BusinessException(code=403, message="无权限审核预约记录")
 
@@ -91,8 +94,7 @@ def create_reservation(
     db: Session, current_user: User, payload: ReservationCreateRequest
 ):
     """创建预约记录"""
-    role_codes = [item.role_code for item in current_user.roles]
-    role_profile = validate_roles(role_codes)
+    role_profile = get_role_profile(current_user)
     required = booking_capability(payload.equipment_id)
     if not role_profile.has(required):
         raise BusinessException(code=403, message="无权限预约该类型资源")

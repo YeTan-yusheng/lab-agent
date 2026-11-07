@@ -2,6 +2,8 @@ from collections.abc import Iterable
 from enum import StrEnum
 from dataclasses import dataclass
 
+from app.models.user import User
+
 
 class RoleValidationError(Exception):
     """角色校验异常"""
@@ -242,3 +244,8 @@ def booking_capability(equipment_id: int | None) -> Capability:
     return (
         Capability.book_equipment if equipment_id is not None else Capability.book_lab
     )
+
+
+def get_role_profile(user: User) -> RoleProfile:
+    role_codes = [item.role_code for item in user.roles]
+    return validate_roles(role_codes)

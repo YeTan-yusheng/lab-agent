@@ -1,3 +1,7 @@
+"""
+初始化创建种子数据，默认落测试库，如需修改请修改 test_database_url
+"""
+
 import argparse
 import sys
 from dataclasses import dataclass, field
@@ -140,9 +144,7 @@ def seed_user(
     else:
         existing_codes = {
             row.role_code
-            for row in db.scalars(
-                select(UserRoles).where(UserRoles.user_id == user.id)
-            )
+            for row in db.scalars(select(UserRoles).where(UserRoles.user_id == user.id))
         }
         if user.role != profile.primary_role.value:
             result.legacy_role_updated = True
@@ -157,9 +159,7 @@ def seed_user(
 
     desired_codes = {role.value for role in profile.roles}
     result.roles_added = sorted(desired_codes - existing_codes)
-    result.roles_removed = (
-        sorted(existing_codes - desired_codes) if reset else []
-    )
+    result.roles_removed = sorted(existing_codes - desired_codes) if reset else []
 
     if not dry_run:
         for role_code in result.roles_added:
@@ -205,9 +205,7 @@ def seed_demo_data(db: Session, dry_run: bool = False) -> DemoSeedResult:
                 )
             )
             if existing is None:
-                result.equipments_created.append(
-                    f"{lab_name}/{equipment_spec['name']}"
-                )
+                result.equipments_created.append(f"{lab_name}/{equipment_spec['name']}")
                 if not dry_run:
                     db.add(Equipment(lab_id=lab.id, **equipment_spec))
 
@@ -267,9 +265,7 @@ def format_demo_result(result: DemoSeedResult, dry_run: bool) -> str:
     if result.labs_created:
         parts.append("create labs: " + ", ".join(result.labs_created))
     if result.equipments_created:
-        parts.append(
-            "create equipments: " + ", ".join(result.equipments_created)
-        )
+        parts.append("create equipments: " + ", ".join(result.equipments_created))
     return f"{prefix}demo data: " + "; ".join(parts)
 
 
@@ -280,9 +276,7 @@ def main(argv: list[str] | None = None) -> int:
         "--with-demo-data", action="store_true", help="同时创建实验室和设备"
     )
     parser.add_argument("--dry-run", action="store_true", help="只预览，不写数据库")
-    parser.add_argument(
-        "--force", action="store_true", help="非开发环境显式确认执行"
-    )
+    parser.add_argument("--force", action="store_true", help="非开发环境显式确认执行")
     args = parser.parse_args(argv)
 
     if settings.app_env == "production" and not args.force:
@@ -321,9 +315,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"数据库连接配置错误: {exc}", file=sys.stderr)
         return 2
 
-    SessionLocal = sessionmaker(
-        bind=engine, autoflush=False, expire_on_commit=False
-    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     user_results: list[SeedUserResult] = []
     demo_result = DemoSeedResult()
 
