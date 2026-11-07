@@ -22,8 +22,8 @@ def verify_login(db: Session, payload: LoginRequest) -> LoginResponse:
 
     try:
         user_response = build_current_user(user)
-    except RoleValidationError as e:
-        raise BusinessException(code=401, message=f"账号角色异常")
+    except RoleValidationError:
+        raise RoleValidationError(code=401, message=f"账号角色异常")
     # 创建token
     token = create_access_token(user.id, user.token_version)
 

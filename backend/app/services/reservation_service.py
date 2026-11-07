@@ -14,7 +14,6 @@ from app.core.database import SessionLocal
 from app.core.permissions import (
     Capability,
     get_role_profile,
-    validate_roles,
     booking_capability,
 )
 

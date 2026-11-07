@@ -1,3 +1,4 @@
+from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 
@@ -28,7 +29,7 @@ class UserCreateRequest(BaseModel):
     phone: str | None = None
     email: str | None = None
     avatar: str | None = None
-    role: str = "student"
+    roles: list[str] = ["student"]
     status: int = 1
 
 
@@ -37,8 +38,11 @@ class UserUpdateRequest(BaseModel):
     phone: str | None = None
     email: str | None = None
     avatar: str | None = None
-    role: str | None = None
-    status: int | None = None
+    status: Literal[0, 1] | None = None
+
+
+class RolesUpdateRequest(BaseModel):
+    roles: list[str]
 
 
 class PasswordUpdateRequest(BaseModel):

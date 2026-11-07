@@ -9,7 +9,6 @@ from app.core.jwt import decode_access_token
 from app.core.permissions import (
     RoleProfile,
     get_role_profile,
-    validate_roles,
     RoleValidationError,
     Capability,
 )

@@ -5,7 +5,12 @@ from app.models.user import User
 from app.dependencies.auth import require_capability, get_current_user
 from app.core.response import Response
 from app.services import user_service
-from app.schemas.user import UserUpdateRequest, PasswordUpdateRequest, UserCreateRequest
+from app.schemas.user import (
+    RolesUpdateRequest,
+    UserUpdateRequest,
+    PasswordUpdateRequest,
+    UserCreateRequest,
+)
 from app.core.database import get_db
 from app.core.permissions import Capability
 
@@ -59,6 +64,18 @@ def create_user(
     return Response.success(data=res)
 
 
+@router.put("/{user_id}/roles")
+def update_user_roles(
+    payload: RolesUpdateRequest,
+    user_id: int,
+    current_user: User = Depends(require_capability(Capability.manage_users)),
+    db: Session = Depends(get_db),
+):
+    """更新用户角色"""
+    res = user_service.update_user_roles(db, current_user,user_id, payload)
+    return Response.success(data=res)
+
+
 @router.put("/{user_id}")
 def update_user(
     payload: UserUpdateRequest,
@@ -66,6 +83,7 @@ def update_user(
     current_user: User = Depends(require_capability(Capability.manage_users)),
     db: Session = Depends(get_db),
 ):
+    """更新用户信息"""
     res = user_service.update_user(db, user_id, payload)
     return Response.success(data=res)
 
