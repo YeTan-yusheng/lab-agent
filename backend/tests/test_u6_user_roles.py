@@ -1,5 +1,8 @@
+import uuid
+from types import SimpleNamespace
+
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
@@ -77,9 +80,24 @@ def users(db):
     }
 
 
+@pytest.fixture()
+def fake_request():
+    return SimpleNamespace(state=SimpleNamespace(request_id="req-test-u6"))
+
+
 def _build_app():
     app = FastAPI()
     app.include_router(api_router)
+
+    @app.middleware("http")
+    async def request_id_middleware(request: Request, call_next):
+        request.state.request_id = (
+            request.headers.get("X-Request-ID") or uuid.uuid4().hex
+        )
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request.state.request_id
+        return response
+
     app.add_exception_handler(BusinessException, bussiness_excpetion_hadler)
     app.add_exception_handler(HTTPException, http_excpetion_hadler)
     app.add_exception_handler(RequestValidationError, validation_excpetion_hadler)
@@ -236,22 +254,28 @@ def test_ensure_not_last_admin_rejects_removing_last_admin(db, users):
         ensure_not_last_admin(db, admin.id, validate_roles(["teacher"]))
 
 
-def test_disable_last_admin_is_rejected(db, users):
+def test_disable_last_admin_is_rejected(db, users, fake_request):
     admin = users["admin1"]
 
     with pytest.raises(BusinessException):
-        update_user(db, admin.id, UserUpdateRequest(status=0))
+        update_user(
+            fake_request,
+            db,
+            admin.id,
+            UserUpdateRequest(status=0),
+            admin,
+        )
 
     db.refresh(admin)
     assert admin.status == 1
 
 
-def test_delete_last_admin_is_rejected(db, users):
+def test_delete_last_admin_is_rejected(db, users, fake_request):
     admin = users["admin1"]
     actor = users["teacher1"]
 
     with pytest.raises(BusinessException):
-        delete_user(db, admin.id, actor)
+        delete_user(fake_request, db, admin.id, actor)
 
     assert db.get(User, admin.id) is not None
 
@@ -299,11 +323,12 @@ def test_user_list_returns_base_fields_only(client, users):
 
 
 
-def test_update_user_roles_service_respects_self_rule(db, users):
+def test_update_user_roles_service_respects_self_rule(db, users, fake_request):
     admin = users["admin1"]
 
     with pytest.raises(BusinessException):
         update_user_roles(
+            fake_request,
             db,
             admin,
             admin.id,

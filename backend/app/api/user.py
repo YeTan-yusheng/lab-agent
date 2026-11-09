@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.models.user import User
@@ -56,43 +56,47 @@ def get_user_list(
 
 @router.post("")
 def create_user(
+    request: Request,
     payload: UserCreateRequest,
     current_user: User = Depends(require_capability(Capability.manage_users)),
     db: Session = Depends(get_db),
 ):
-    res = user_service.create_user(db, payload)
+    res = user_service.create_user(request, db, payload, current_user)
     return Response.success(data=res)
 
 
 @router.put("/{user_id}/roles")
 def update_user_roles(
+    request: Request,
     payload: RolesUpdateRequest,
     user_id: int,
     current_user: User = Depends(require_capability(Capability.manage_users)),
     db: Session = Depends(get_db),
 ):
     """更新用户角色"""
-    res = user_service.update_user_roles(db, current_user,user_id, payload)
+    res = user_service.update_user_roles(request, db, current_user, user_id, payload)
     return Response.success(data=res)
 
 
 @router.put("/{user_id}")
 def update_user(
+    request: Request,
     payload: UserUpdateRequest,
     user_id: int,
     current_user: User = Depends(require_capability(Capability.manage_users)),
     db: Session = Depends(get_db),
 ):
     """更新用户信息"""
-    res = user_service.update_user(db, user_id, payload)
+    res = user_service.update_user(request, db, user_id, payload, current_user)
     return Response.success(data=res)
 
 
 @router.delete("/{user_id}")
 def delete_user(
+    request: Request,
     user_id: int,
     current_user: User = Depends(require_capability(Capability.manage_users)),
     db: Session = Depends(get_db),
 ):
-    user_service.delete_user(db, user_id, current_user)
+    user_service.delete_user(request, db, user_id, current_user)
     return Response.success()

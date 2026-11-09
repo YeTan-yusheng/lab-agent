@@ -10,7 +10,7 @@ class UserResponse(BaseModel):
     phone: str | None = None
     email: str | None = None
     avatar: str | None = None
-    status: int
+    status: Literal[0, 1] = 1
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -30,7 +30,7 @@ class UserCreateRequest(BaseModel):
     email: str | None = None
     avatar: str | None = None
     roles: list[str] = ["student"]
-    status: int = 1
+    status: Literal[0, 1] = 1
 
 
 class UserUpdateRequest(BaseModel):

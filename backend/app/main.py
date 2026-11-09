@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 import asyncio
+import uuid
 
 from app.services import reservation_service
 from app.models.base import Base
@@ -50,6 +51,19 @@ app.add_exception_handler(RoleValidationError, role_validation_exception_handler
 app.add_exception_handler(Exception, global_excpetion_hadler)
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = str(request.headers.get("X-Request-ID") or uuid.uuid4().hex)[:64]
+    request.state.request_id = request_id
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    else:
+        response.headers["X-Request-ID"] = request_id
+        return response
 
 
 @app.get("/")

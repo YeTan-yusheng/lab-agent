@@ -5,7 +5,10 @@ from sqlalchemy import CheckConstraint, Index, String, ForeignKey, UniqueConstra
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = {"comment": "用户信息表"}
+    __table_args__ = (
+        UniqueConstraint("username"),
+        {"comment": "用户信息表"},
+    )
 
     username: Mapped[str] = mapped_column(String(50), comment="账号", nullable=False)
     password: Mapped[str] = mapped_column(String(100), comment="密码", nullable=False)

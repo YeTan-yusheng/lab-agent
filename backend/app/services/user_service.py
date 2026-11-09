@@ -1,5 +1,8 @@
+import json
+from fastapi import Request
 from sqlalchemy.orm import Session
 from sqlalchemy import select, or_, func, delete
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.schemas.user import (
     CurrentUserResponse,
@@ -12,7 +15,9 @@ from app.schemas.user import UserUpdateRequest, PasswordUpdateRequest
 from app.core.password import verify_password, hash_password
 from app.core.exceptions import BusinessException
 from app.core.response import PageResponse
-from app.core.permissions import Role, RoleProfile, validate_roles, RoleValidationError
+from app.core.permissions import RoleProfile, validate_roles
+from app.services.audit_service import add_success_audit, write_failed_audit
+from app.models.process_audit import ActionType
 
 
 def get_user_info(user: User) -> CurrentUserResponse:
@@ -64,7 +69,9 @@ def get_user_page_list(
     )
 
 
-def create_user(db: Session, payload: UserCreateRequest) -> UserResponse:
+def create_user(
+    request: Request, db: Session, payload: UserCreateRequest, current_user: User
+) -> UserResponse:
     """用户管理新增用户"""
     existing = db.execute(
         select(User).where(User.username == payload.username)
@@ -84,21 +91,45 @@ def create_user(db: Session, payload: UserCreateRequest) -> UserResponse:
         avatar=payload.avatar,
         status=payload.status,
     )
-    db.add(user)
-    db.flush()
-    db.add_all(
-        [
-            UserRoles(user_id=user.id, role_code=role.value)
-            for role in role_profile.roles
-        ]
-    )
-    db.commit()
+    # 记录操作日志
+    audit_dict = {
+        "actor_user_id": current_user.id,
+        "target_user_id": 0,
+        "action": ActionType.create_user,
+        "request_id": request.state.request_id,
+    }
+    try:
+        db.add(user)
+        db.flush()
+        db.add_all(
+            [
+                UserRoles(user_id=user.id, role_code=role.value)
+                for role in role_profile.roles
+            ]
+        )
+        db.flush()
+        audit_dict["target_user_id"] = user.id
+        add_success_audit(db, result="success", **audit_dict)
+        db.commit()
+    except SQLAlchemyError as e:
+        db.rollback()
+        write_failed_audit(
+            result="failed", error_code=str(type(e).__name__), **audit_dict
+        )
+        raise BusinessException(message="创建用户失败") from e
+
     db.refresh(user)
     return UserResponse.model_validate(user)
 
 
-def update_user(db: Session, user_id: int, payload: UserUpdateRequest) -> UserResponse:
-    """用户管理更新用户"""
+def update_user(
+    request: Request,
+    db: Session,
+    user_id: int,
+    payload: UserUpdateRequest,
+    current_user: User,
+) -> UserResponse:
+    """用户管理-更新用户"""
     user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
     if not user:
         raise BusinessException(message="用户不存在")
@@ -111,15 +142,41 @@ def update_user(db: Session, user_id: int, payload: UserUpdateRequest) -> UserRe
 
     for filed, value in data.items():
         setattr(user, filed, value)
+    # 判断是否是禁用用户 -> 禁用用户时，需要更新token_version 并添加审计
     if new_status is not None:
         user.token_version += 1
-    db.commit()
+        audit_dict = {
+            "actor_user_id": current_user.id,
+            "target_user_id": user_id,
+            "action": (
+                ActionType.disable_user if new_status == 0 else ActionType.enable_user
+            ),
+            "request_id": request.state.request_id,
+        }
+        try:
+            db.flush()
+            add_success_audit(db, result="success", **audit_dict)
+            db.commit()
+        except SQLAlchemyError as e:
+            db.rollback()
+            write_failed_audit(
+                result="failed", error_code=str(type(e).__name__), **audit_dict
+            )
+            raise BusinessException(
+                message=f"{"禁用" if new_status == 0 else '启用'}用户失败"
+            ) from e
+    else:
+        db.commit()
     db.refresh(user)
     return UserResponse.model_validate(user)
 
 
 def update_user_roles(
-    db: Session, current_user: User, user_id: int, payload: RolesUpdateRequest
+    request: Request,
+    db: Session,
+    current_user: User,
+    user_id: int,
+    payload: RolesUpdateRequest,
 ) -> UserResponse:
     """用户管理-更新用户角色"""
     user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
@@ -131,23 +188,40 @@ def update_user_roles(
         raise BusinessException(message="不能更新当前登录的账号角色")
 
     ensure_not_last_admin(db, user_id, role_profile)
+    # 记录操作日志
+    audit_dict = {
+        "actor_user_id": current_user.id,
+        "target_user_id": user_id,
+        "old_roles": json.dumps(_get_current_roles(db, user_id)),
+        "new_roles": json.dumps([role.value for role in role_profile.roles]),
+        "action": ActionType.update_roles,
+        "request_id": request.state.request_id,
+    }
+    try:
+        db.execute(delete(UserRoles).where(UserRoles.user_id == user_id))
+        db.add_all(
+            [
+                UserRoles(user_id=user.id, role_code=role.value)
+                for role in role_profile.roles
+            ]
+        )
+        user.role = role_profile.primary_role.value
+        user.token_version += 1
+        db.flush()
+        add_success_audit(db, result="success", **audit_dict)
+        db.commit()
+    except SQLAlchemyError as e:
+        db.rollback()
+        write_failed_audit(
+            result="failed", error_code=str(type(e).__name__), **audit_dict
+        )
+        raise BusinessException(message="更新用户角色失败") from e
 
-    db.execute(delete(UserRoles).where(UserRoles.user_id == user_id))
-    db.add_all(
-        [
-            UserRoles(user_id=user.id, role_code=role.value)
-            for role in role_profile.roles
-        ]
-    )
-
-    user.role = role_profile.primary_role.value
-    user.token_version += 1
-    db.commit()
     db.refresh(user)
     return UserResponse.model_validate(user)
 
 
-def delete_user(db: Session, user_id: int, current_user: User):
+def delete_user(request: Request, db: Session, user_id: int, current_user: User):
     """用户管理删除用户"""
     if user_id == current_user.id:
         raise BusinessException(message="不能删除当前登录的账号")
@@ -157,8 +231,23 @@ def delete_user(db: Session, user_id: int, current_user: User):
         raise BusinessException(message="用户不存在")
 
     ensure_not_last_active_admin(db, user_id)
-    db.delete(user)
-    db.commit()
+    audit_dict = {
+        "actor_user_id": current_user.id,
+        "target_user_id": user_id,
+        "action": ActionType.delete_user,
+        "request_id": request.state.request_id,
+    }
+    try:
+        db.delete(user)
+        db.flush()
+        add_success_audit(db, result="success", **audit_dict)
+        db.commit()
+    except SQLAlchemyError as e:
+        db.rollback()
+        write_failed_audit(
+            result="failed", error_code=str(type(e).__name__), **audit_dict
+        )
+        raise BusinessException(message="删除用户失败") from e
 
 
 def build_current_user(user: User) -> CurrentUserResponse:
@@ -170,14 +259,20 @@ def build_current_user(user: User) -> CurrentUserResponse:
     )
 
 
-def ensure_not_last_admin(db: Session, user_id: int, role_profile: RoleProfile):
-    # 检查是否会移除除操作者外的最后一个其他管理员角色
+def _get_current_roles(db: Session, user_id: int) -> list[str]:
+    """获取用户当前所有角色"""
     current_roles = [
         role.role_code
         for role in db.execute(
             select(UserRoles).where(UserRoles.user_id == user_id)
         ).scalars()
     ]
+    return current_roles
+
+
+def ensure_not_last_admin(db: Session, user_id: int, role_profile: RoleProfile):
+    # 检查是否会移除除操作者外的最后一个其他管理员角色
+    current_roles = _get_current_roles(db, user_id)
     if ("admin" in current_roles) and (
         "admin" not in {r.value for r in role_profile.roles}
     ):
