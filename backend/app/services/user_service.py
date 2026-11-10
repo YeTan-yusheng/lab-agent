@@ -39,9 +39,9 @@ def update_user_info(
 
 def update_password(db: Session, user: User, payload: PasswordUpdateRequest):
     if not verify_password(payload.old_password, user.password):
-        raise BusinessException(message="原密码错误")
+        raise BusinessException(code=401, message="原密码错误")
     if payload.new_password == payload.old_password:
-        raise BusinessException(message="新密码不能与原密码相同")
+        raise BusinessException(code=400, message="新密码不能与原密码相同")
 
     user.password = hash_password(payload.new_password)
     user.token_version += 1
@@ -77,7 +77,7 @@ def create_user(
         select(User).where(User.username == payload.username)
     ).scalar_one_or_none()
     if existing:
-        raise BusinessException(message="用户已存在")
+        raise BusinessException(code=409, message="用户已存在")
 
     role_profile: RoleProfile = validate_roles(payload.roles)
 
@@ -132,7 +132,7 @@ def update_user(
     """用户管理-更新用户"""
     user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
     if not user:
-        raise BusinessException(message="用户不存在")
+        raise BusinessException(code=404, message="用户不存在")
 
     if payload.status == 0:
         ensure_not_last_active_admin(db, user_id)
@@ -181,11 +181,11 @@ def update_user_roles(
     """用户管理-更新用户角色"""
     user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
     if not user:
-        raise BusinessException(message="用户不存在")
+        raise BusinessException(code=404, message="用户不存在")
 
     role_profile = validate_roles(payload.roles)
     if user_id == current_user.id:
-        raise BusinessException(message="不能更新当前登录的账号角色")
+        raise BusinessException(code=403, message="不能更新当前登录的账号角色")
 
     ensure_not_last_admin(db, user_id, role_profile)
     # 记录操作日志
@@ -224,11 +224,11 @@ def update_user_roles(
 def delete_user(request: Request, db: Session, user_id: int, current_user: User):
     """用户管理删除用户"""
     if user_id == current_user.id:
-        raise BusinessException(message="不能删除当前登录的账号")
+        raise BusinessException(code=403, message="不能删除当前登录的账号")
 
     user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
     if not user:
-        raise BusinessException(message="用户不存在")
+        raise BusinessException(code=404, message="用户不存在")
 
     ensure_not_last_active_admin(db, user_id)
     audit_dict = {

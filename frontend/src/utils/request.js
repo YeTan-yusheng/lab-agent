@@ -23,31 +23,33 @@ service.interceptors.request.use(
 service.interceptors.response.use(
   (res) => {
     const data = res.data
-    if (data.code != 200) {
+    if (data.code !== 200) {
       ElMessage.error(data.message || '请求失败')
-      if (data.code == 401) {
-        logout()
-        router.push('/login')
-        return Promise.reject(data)
-      }
+      return Promise.reject(data)
     }
     return data
   },
   (err) => {
-    if (err.response) {
-      const httpStatusCode = err.response.status
-      if (httpStatusCode == 401) {
+    const status = err.response?.status
+    const data = err.response?.data
+    const message = data?.message || '请求失败'
+    const isLoginRequest = String(err.config?.url || '').includes('/api/auth/login')
+
+    if (status === 401) {
+      if (isLoginRequest) {
+        // 登录失败提示账号密码错误/账号禁用
+        ElMessage.error(message)
+      } else {
         ElMessage.error('登录状态已失效，请重新登录')
         logout()
         router.push('/login')
-        return Promise.reject(err.data)
-      } else {
-        ElMessage.error(err.response.data?.message || '请求失败')
       }
+    } else if (status === 403) {
+      ElMessage.error(message || '无权限访问')
     } else {
-      ElMessage.error('网络异常，请检查后端服务')
+      ElMessage.error(message)
     }
-    return Promise.reject(err)
+    return Promise.reject(data || err)
   }
 )
 

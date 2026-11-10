@@ -146,7 +146,7 @@ const formLoading = ref(false)
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
+    { message: '请输入密码', trigger: 'blur' },
     { min: 3, max: 10, message: '密码是3-10位', trigger: 'blur' }
   ],
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],

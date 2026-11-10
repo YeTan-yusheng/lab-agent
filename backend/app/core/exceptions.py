@@ -15,18 +15,24 @@ class BusinessException(Exception):
         super().__init__(message)
 
 
+def _http_status(code: int, default: int) -> int:
+    return code if 400 <= code <= 599 else default
+
+
 async def role_validation_exception_handler(request: Request, exc: RoleValidationError):
     """角色校验异常处理器"""
+    status_code = _http_status(exc.code, 422)
     return JSONResponse(
-        status_code=422,
+        status_code=status_code,
         content=Response.error(code=exc.code, message=exc.message).model_dump(),
     )
 
 
 async def bussiness_excpetion_hadler(request: Request, exc: BusinessException):
     """自定义业务异常处理器"""
+    status_code = _http_status(exc.code, 400)
     return JSONResponse(
-        status_code=200,
+        status_code=status_code,
         content=Response.error(code=exc.code, message=exc.message).model_dump(),
     )
 

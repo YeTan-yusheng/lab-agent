@@ -110,7 +110,7 @@ def create_reservation(
 
     lab = db.execute(select(Lab).where(Lab.id == payload.lab_id)).scalar_one_or_none()
     if not lab:
-        raise BusinessException(message="实验室不存在")
+        raise BusinessException(code=404, message="实验室不存在")
     if lab.status != 1:
         raise BusinessException(message="实验室已关闭")
     if lab.open_time and payload.start_time < lab.open_time:
@@ -124,7 +124,7 @@ def create_reservation(
             select(Equipment).where(Equipment.id == payload.equipment_id)
         ).scalar_one_or_none()
         if not equipment:
-            raise BusinessException(message="实验室设备不存在")
+            raise BusinessException(code=404, message="实验室设备不存在")
         if equipment.status != 1:
             raise BusinessException(message="实验室设备正在维修")
 
@@ -144,7 +144,7 @@ def create_reservation(
         stmt = stmt.where(Reservation.equipment_id.is_(None))  # 只预约实验室
     res = db.execute(stmt).scalar_one_or_none()
     if res:
-        raise BusinessException(message="该时段已预约")
+        raise BusinessException(code=409, message="该时段已预约")
 
     resvervation_model = Reservation(
         user_id=current_user.id,

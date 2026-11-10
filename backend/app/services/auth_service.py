@@ -33,7 +33,7 @@ def verify_login(db: Session, payload: LoginRequest) -> LoginResponse:
 def register(db: Session, payload: RegisterRequest):
     existing = db.scalar(select(User).where(User.username == payload.username))
     if existing:
-        raise BusinessException(code=401, message="账号已经存在")
+        raise BusinessException(code=409, message="账号已经存在")
 
     user = User(
         username=payload.username,

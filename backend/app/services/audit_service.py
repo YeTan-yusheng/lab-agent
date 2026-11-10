@@ -1,14 +1,7 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_, select
-
-from app.models.process_audit import ProcessAudit
-
-
-from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.models.process_audit import ActionType, ProcessAudit
-from app.core.response import PageResponse
 
 
 def add_success_audit(db: Session, **kwargs):
@@ -45,6 +38,6 @@ def _build_audit_record(
         old_roles=old_roles,
         new_roles=new_roles,
         ip=ip,
-        error_code=error_code[:64],
+        error_code=error_code[:64] if error_code is not None else None,
         user_agent=user_agent,
     )
