@@ -54,6 +54,16 @@ def get_user_list(
     return Response.success(data=res)
 
 
+@router.get("/{user_id}")
+def get_user_detail(
+    user_id: int,
+    current_user: User = Depends(require_capability(Capability.manage_users)),
+    db: Session = Depends(get_db),
+):
+    res = user_service.get_user_detail(db, user_id)
+    return Response.success(data=res)
+
+
 @router.post("")
 def create_user(
     request: Request,

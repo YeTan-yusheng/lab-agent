@@ -22,6 +22,11 @@ class CurrentUserResponse(UserResponse):
     display_name: str
 
 
+class UserDetailResponse(UserResponse):
+    roles: list[str]
+    display_name: str
+
+
 class UserCreateRequest(BaseModel):
     username: str
     password: str = "123456"

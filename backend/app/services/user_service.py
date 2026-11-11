@@ -7,6 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.schemas.user import (
     CurrentUserResponse,
     RolesUpdateRequest,
+    UserDetailResponse,
     UserResponse,
     UserCreateRequest,
 )
@@ -66,6 +67,19 @@ def get_user_page_list(
 
     return PageResponse(
         list=[UserResponse.model_validate(item) for item in items], total=total
+    )
+
+
+def get_user_detail(db: Session, user_id: int) -> UserDetailResponse:
+    user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+    if not user:
+        raise BusinessException(code=404, message="用户不存在")
+
+    profile = validate_roles([item.role_code for item in user.roles])
+    return UserDetailResponse(
+        **UserResponse.model_validate(user).model_dump(),
+        roles=[role.value for role in profile.roles],
+        display_name=profile.display_name,
     )
 
 

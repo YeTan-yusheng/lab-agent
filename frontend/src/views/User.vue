@@ -14,7 +14,13 @@
           @clear="handleSearch"
         ></el-input>
         <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
-        <el-button type="success" :icon="Plus" @click="handleCreate">新增</el-button>
+        <el-button
+          v-if="can(Capability.MANAGE_USERS)"
+          type="success"
+          :icon="Plus"
+          @click="handleCreate"
+          >新增</el-button
+        >
       </div>
 
       <el-table
@@ -41,7 +47,7 @@
         <el-table-column prop="phone" label="手机号" />
         <el-table-column prop="role" label="角色" width="100">
           <template #default="{ row }">
-            {{ row.role === 'admin' ? '管理员' : '学生' }}
+            {{ roleText(row.role) }}
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="100">
@@ -53,8 +59,22 @@
         </el-table-column>
         <el-table-column label="操作" width="160">
           <template #default="{ row }">
-            <el-button type="primary" text bg @click="handleEdit(row)">编辑</el-button>
-            <el-button type="danger" text bg @click="handleDelete(row)">删除</el-button>
+            <el-button
+              v-if="can(Capability.MANAGE_USERS)"
+              type="primary"
+              text
+              bg
+              @click="handleEdit(row)"
+              >编辑</el-button
+            >
+            <el-button
+              v-if="can(Capability.MANAGE_USERS)"
+              type="danger"
+              text
+              bg
+              @click="handleDelete(row)"
+              >删除</el-button
+            >
           </template>
         </el-table-column>
       </el-table>
@@ -83,16 +103,20 @@
         <el-form-item label="账号" prop="username">
           <el-input :disabled="!!form.id" v-model="form.username" placeholer="请输入账号" />
         </el-form-item>
-        <el-form-item label="密码" prop="password">
+        <el-form-item v-if="!form.id" label="密码" prop="password">
           <el-input type="password" show-password v-model="form.password" placeholer="请输入密码" />
         </el-form-item>
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" placeholer="请输入名称" />
         </el-form-item>
-        <el-form-item label="角色" prop="role">
-          <el-select v-model="form.role">
-            <el-option label="学生" value="student"></el-option>
-            <el-option label="管理员" value="admin"></el-option>
+        <el-form-item label="角色" prop="roleKey">
+          <el-select v-model="form.roleKey" :disabled="isSelf">
+            <el-option
+              v-for="item in roleOptions"
+              :key="item.key"
+              :label="item.label"
+              :value="item.key"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="邮箱" prop="email">
@@ -110,7 +134,13 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="formLoading" @click="handleSave">确定</el-button>
+        <el-button
+          v-if="can(Capability.MANAGE_USERS)"
+          type="primary"
+          :loading="formLoading"
+          @click="handleSave"
+          >确定</el-button
+        >
       </template>
     </el-dialog>
   </div>
@@ -118,10 +148,21 @@
 
 <script setup>
 import { Search, Plus } from '@element-plus/icons-vue'
-import { createUserApi, deleteUserApi, getUserPageList, updateUserApi } from '@/api/user'
+import {
+  createUserApi,
+  deleteUserApi,
+  getUserPageList,
+  updateUserApi,
+  updateUserRolesApi,
+  getUserDetailApi
+} from '@/api/user'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import Capability from '@/utils/permissions'
+import { useUser } from '@/utils/user'
+import { computed } from 'vue'
 
+const { userInfo, can } = useUser()
 const params = reactive({
   page: 1,
   pageSize: 10,
@@ -132,16 +173,49 @@ const tableData = ref([])
 const total = ref(0)
 const dialogVisible = ref(false)
 const formRef = ref()
+// 角色选项
+const roleOptions = [
+  { key: 'student', label: '学生', roles: ['student'] },
+  { key: 'teacher', label: '教师', roles: ['teacher'] },
+  { key: 'admin', label: '管理员', roles: ['admin'] },
+  { key: 'teacher_admin', label: '教师+管理员', roles: ['teacher', 'admin'] }
+]
+const roleText = (role) => {
+  return (
+    {
+      student: '学生',
+      teacher: '教师',
+      admin: '管理员'
+    }[role] || role
+  )
+}
+//把下拉的 roleKey 转成后端需要的数组格式
+const roleMap = Object.fromEntries(roleOptions.map((item) => [item.key, item.roles]))
+//判断角色是否真的改了
+const originalRoleKey = ref('student')
+//把后端返回的 roles 还原成下拉项的 roleKey
+const isSelf = computed(() => form.id === userInfo.value?.id)
+
+function toRoleKey(roles = []) {
+  const set = new Set(roles)
+  if (set.has('teacher') && set.has('admin')) return 'teacher_admin'
+  if (set.has('teacher')) return 'teacher'
+  if (set.has('admin')) return 'admin'
+  return 'student'
+}
 const form = reactive({
   username: '',
+  password: '',
   name: '',
-  role: 'student',
+  roleKey: 'student',
   email: '',
   phone: '',
   avatar: '',
   status: 1
 })
 const formLoading = ref(false)
+
+const roleLabel = computed(() => userInfo.value?.display_name || '用户')
 
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
@@ -158,8 +232,9 @@ const resetForm = () => {
   Object.assign(form, {
     id: null,
     username: '',
+    password: '',
     name: '',
-    role: 'student',
+    roleKey: 'student',
     email: '',
     phone: '',
     avatar: '',
@@ -172,18 +247,23 @@ const handleCreate = () => {
   dialogVisible.value = true
 }
 
-const handleEdit = (row) => {
-  resetForm()
+const handleEdit = async (row) => {
+  const res = await getUserDetailApi(row.id)
+  const detail = res.data
+
   Object.assign(form, {
-    id: row.id,
-    username: row.username,
-    name: row.name,
-    role: row.role,
-    email: row.email,
-    phone: row.phone,
-    avatar: row.avatar,
-    status: row.status
+    id: detail.id,
+    username: detail.username,
+    password: '',
+    name: detail.name,
+    roleKey: toRoleKey(detail.roles),
+    email: detail.email,
+    phone: detail.phone,
+    avatar: detail.avatar,
+    status: detail.status
   })
+
+  originalRoleKey.value = form.roleKey
   dialogVisible.value = true
 }
 
@@ -204,14 +284,41 @@ const handleDelete = (row) => {
 const handleSave = async () => {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
+
   formLoading.value = true
   try {
-    const res = form.id ? await updateUserApi(form.id, form) : await createUserApi(form)
-    if (res.code === 200) {
-      dialogVisible.value = false
-      ElMessage.success('操作成功')
-      load()
+    if (!form.id) {
+      const payload = {
+        username: form.username,
+        name: form.name,
+        email: form.email,
+        phone: form.phone,
+        avatar: form.avatar,
+        status: form.status,
+        roles: roleMap[form.roleKey]
+      }
+      if (form.password) payload.password = form.password
+
+      await createUserApi(payload)
+    } else {
+      await updateUserApi(form.id, {
+        name: form.name,
+        email: form.email,
+        phone: form.phone,
+        avatar: form.avatar,
+        status: form.status
+      })
+
+      if (!isSelf.value && form.roleKey !== originalRoleKey.value) {
+        await updateUserRolesApi(form.id, roleMap[form.roleKey])
+      }
     }
+
+    dialogVisible.value = false
+    ElMessage.success('操作成功')
+    load()
+  } catch (err) {
+    // 请求拦截器已提示；这里保持弹窗打开
   } finally {
     formLoading.value = false
   }

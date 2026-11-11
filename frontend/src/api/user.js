@@ -51,6 +51,23 @@ export function updateUserApi(userId, data) {
   })
 }
 
+// 更新用户角色
+export function updateUserRolesApi(userId, roles) {
+  return request({
+    url: `/api/user/${userId}/roles`,
+    method: 'put',
+    data: { roles }
+  })
+}
+
+// 用户详情
+export function getUserDetailApi(userId) {
+  return request({
+    url: `/api/user/${userId}`,
+    method: 'get'
+  })
+}
+
 // 删除用户
 export function deleteUserApi(userId) {
   return request({
