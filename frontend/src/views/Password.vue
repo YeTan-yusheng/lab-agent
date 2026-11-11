@@ -49,10 +49,9 @@ import { ElMessage } from 'element-plus'
 import { updatePassword } from '@/api/user'
 import { ref, reactive } from 'vue'
 import { useUser } from '@/utils/user'
-import { logout } from '@/utils/auth'
 import router from '@/router'
 
-const { updateUser } = useUser()
+const { clearUser } = useUser()
 const submitting = ref(false)
 const loading = ref(false)
 const formRef = ref()
@@ -92,7 +91,7 @@ const handleSubmit = async () => {
     })
     if (res.code == 200) {
       ElMessage.success('修改成功')
-      logout()
+      clearUser()
       await router.push('/login')
     }
   } finally {

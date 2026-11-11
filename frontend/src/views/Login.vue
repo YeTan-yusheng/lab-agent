@@ -42,12 +42,12 @@
 
 <script setup>
 import { ref, reactive } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
 import { User, Lock } from '@element-plus/icons-vue'
 import { loginApi } from '@/api/auth'
 import { useUser } from '@/utils/user'
-
 const { saveLoginData } = useUser()
 
 const loadingValue = ref(false)
@@ -64,6 +64,16 @@ const form = reactive({
   password: ''
 })
 
+const route = useRoute()
+
+function resolveRedirect(query) {
+  const redirect = query.redirect
+  if (typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')) {
+    return redirect
+  }
+  return '/manager/home'
+}
+
 const login = async () => {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
@@ -71,11 +81,14 @@ const login = async () => {
   loadingValue.value = true
   try {
     const res = await loginApi(form)
-    saveLoginData(res.data)
     if (res.code == 200) {
+      const target = resolveRedirect(route.query)
+      saveLoginData(res.data)
       ElMessage.success('登录成功')
-      await router.push('/manager/home')
+      await router.replace(target)
     }
+  } catch (err) {
+    // 错误提示已由请求拦截器统一处理
   } finally {
     loadingValue.value = false
   }

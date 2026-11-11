@@ -97,16 +97,16 @@ import {
   ChatDotRound
 } from '@element-plus/icons-vue'
 import router from '@/router'
-import { logout } from '@/utils/auth'
 import { useUser } from '@/utils/user'
 
 const { userInfo } = useUser()
+const { clearUser } = useUser()
 
 const handleCommand = (command) => {
   if (command == 'profile') {
     router.push('/manager/profile')
   } else if (command == 'logout') {
-    logout()
+    clearUser()
     router.push('/login')
   } else if (command == 'password') {
     router.push('/manager/password')

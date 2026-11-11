@@ -1,9 +1,10 @@
 import request from '@/utils/request'
 
-export function getUserInfo(data) {
+export function getUserInfo() {
   return request({
     url: '/api/user/me',
-    method: 'get'
+    method: 'get',
+    skipAuthHandler: true
   })
 }
 

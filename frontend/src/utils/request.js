@@ -1,7 +1,8 @@
 import axios from 'axios'
-import { getToken, logout } from './auth'
+import { getToken } from './auth'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
+import { useUser } from '@/utils/user'
 
 const service = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '',
@@ -39,9 +40,12 @@ service.interceptors.response.use(
       if (isLoginRequest) {
         // 登录失败提示账号密码错误/账号禁用
         ElMessage.error(message)
+      } else if (err.config?.skipAuthHandler) {
+        // 交给 /me 校准和路由守卫处理
       } else {
         ElMessage.error('登录状态已失效，请重新登录')
-        logout()
+        const { clearUser } = useUser()
+        clearUser()
         router.push('/login')
       }
     } else if (status === 403) {
