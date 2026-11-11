@@ -7,7 +7,9 @@
             <span>{{ lab?.name || '实验室' }}设备列表</span>
           </div>
           <div>
-            <el-button type="primary" @click="handlReserveLab">预约实验室</el-button>
+            <el-button v-if="can(Capability.BOOK_LAB)" type="primary" @click="handleReserveLab"
+              >预约实验室</el-button
+            >
             <el-button @click="router.push('/manager/lablist')">返回实验室列表</el-button>
           </div>
         </div>
@@ -64,6 +66,7 @@
         <el-table-column label="操作" width="100">
           <template #default="{ row }">
             <el-button
+              v-if="can(Capability.BOOK_EQUIPMENT)"
               :disabled="!row.status"
               type="primary"
               text
@@ -104,7 +107,10 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getEquipmentPageList } from '@/api/equipment'
 import ReserveDialog from '@/components/ReserveDialog.vue'
+import Capability from '@/utils/permissions'
+import { useUser } from '@/utils/user'
 
+const { can } = useUser()
 const reserveVisible = ref(false)
 const currentEquipment = ref(null)
 const route = useRoute()
@@ -119,7 +125,7 @@ const loading = ref(false)
 const tableData = ref([])
 const total = ref(0)
 
-const handlReserveLab = () => {
+const handleReserveLab = () => {
   currentEquipment.value = null
   reserveVisible.value = true
 }

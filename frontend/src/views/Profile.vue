@@ -75,9 +75,7 @@ const rules = {
   phone: [{ pattern: /^1[3-9]\d{9}$/, message: '手机号格式错误', trigger: 'blur' }]
 }
 
-const roleLabel = computed(() => {
-  return form.role === 'admin' ? '管理员' : form.role === 'student' ? '学生' : '未知角色'
-})
+const roleLabel = computed(() => userInfo.value?.display_name || '用户')
 
 const beforeAvatarUpload = (file) => {
   const imageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']

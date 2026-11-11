@@ -50,7 +50,7 @@
         </el-table-column>
         <el-table-column label="操作" width="180">
           <template #default="{ row }">
-            <template v-if="row.status === 0">
+            <template v-if="row.status === 0 && can(Capability.AUDIT_RESERVATION)">
               <el-button type="success" text bg @click="handleAudit(row, 1)">通过</el-button>
               <el-button type="danger" text bg @click="handleAudit(row, 2)">拒绝</el-button>
             </template>
@@ -76,6 +76,10 @@
 import { ref, reactive, onMounted } from 'vue'
 import { auditReservationApi, getReservationPageList } from '@/api/reservation'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import { useUser } from '@/utils/user'
+import Capability from '@/utils/permissions'
+
+const { can } = useUser()
 const loading = ref(false)
 const tableData = ref([])
 const total = ref(0)
@@ -97,7 +101,7 @@ const load = async () => {
     const res = await getReservationPageList(params)
     if (res.code === 200) {
       tableData.value = res.data?.list
-      total.value = res.total?.total ?? 0
+      total.value = res.data?.total ?? 0
     }
   } finally {
     loading.value = false

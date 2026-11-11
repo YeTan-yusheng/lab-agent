@@ -27,7 +27,13 @@
           </el-option>
         </el-select>
         <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
-        <el-button type="success" :icon="Plus" @click="handleCreate">新增</el-button>
+        <el-button
+          v-if="can(Capability.MANAGE_RESOURCES)"
+          type="success"
+          :icon="Plus"
+          @click="handleCreate"
+          >新增</el-button
+        >
       </div>
 
       <el-table
@@ -61,8 +67,22 @@
         </el-table-column>
         <el-table-column label="操作" width="160">
           <template #default="{ row }">
-            <el-button type="primary" text bg @click="handleEdit(row)">编辑</el-button>
-            <el-button type="danger" text bg @click="handleDelete(row)">删除</el-button>
+            <el-button
+              v-if="can(Capability.MANAGE_RESOURCES)"
+              type="primary"
+              text
+              bg
+              @click="handleEdit(row)"
+              >编辑</el-button
+            >
+            <el-button
+              v-if="can(Capability.MANAGE_RESOURCES)"
+              type="danger"
+              text
+              bg
+              @click="handleDelete(row)"
+              >删除</el-button
+            >
           </template>
         </el-table-column>
       </el-table>
@@ -131,7 +151,13 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="formLoading" @click="handleSave">确定</el-button>
+        <el-button
+          v-if="can(Capability.MANAGE_RESOURCES)"
+          type="primary"
+          :loading="formLoading"
+          @click="handleSave"
+          >确定</el-button
+        >
       </template>
     </el-dialog>
   </div>
@@ -149,6 +175,10 @@ import { getLabPageList } from '@/api/lab'
 import { uploadFileApi } from '@/api/file'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useUser } from '@/utils/user'
+import { Capability } from '@/utils/permissions'
+
+const { can } = useUser()
 const params = reactive({
   page: 1,
   page_size: 10,

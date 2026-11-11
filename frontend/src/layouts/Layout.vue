@@ -36,43 +36,10 @@
 
       <el-container>
         <el-aside width="220px">
-          <el-menu
-            router
-            :default-active="router.currentRoute.value.path"
-            style="height: 100%"
-            default-active="/manager/home"
-          >
-            <el-menu-item index="/manager/home">
-              <el-icon><icon-menu /></el-icon>
-              系统首页
-            </el-menu-item>
-            <el-menu-item index="/manager/ai-chat">
-              <el-icon><ChatDotRound /></el-icon>
-              <span>AI智能助手</span>
-            </el-menu-item>
-            <el-menu-item index="/manager/lablist" v-if="userInfo?.role === 'student'">
-              <el-icon><OfficeBuilding /></el-icon>
-              <span>实验室列表</span>
-            </el-menu-item>
-            <el-menu-item index="/manager/my-reservation" v-if="userInfo?.role === 'student'">
-              <el-icon><Tickets /></el-icon>
-              <span>我的预约记录</span>
-            </el-menu-item>
-            <el-menu-item index="/manager/audit-reservation" v-if="userInfo?.role === 'admin'">
-              <el-icon><Checked /></el-icon>
-              <span>预约审核</span>
-            </el-menu-item>
-            <el-menu-item index="/manager/lab" v-if="userInfo?.role === 'admin'">
-              <el-icon><House /></el-icon>
-              <span>实验室管理</span>
-            </el-menu-item>
-            <el-menu-item index="/manager/equ" v-if="userInfo?.role === 'admin'">
-              <el-icon><Setting /></el-icon>
-              <span>设备列表管理</span>
-            </el-menu-item>
-            <el-menu-item index="/manager/user" v-if="userInfo?.role === 'admin'">
-              <el-icon><User /></el-icon>
-              <span>用户管理</span>
+          <el-menu router :default-active="route.path">
+            <el-menu-item v-for="item in visibleMenus" :key="item.path" :index="item.path">
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span>{{ item.label }}</span>
             </el-menu-item>
           </el-menu>
         </el-aside>
@@ -98,9 +65,12 @@ import {
 } from '@element-plus/icons-vue'
 import router from '@/router'
 import { useUser } from '@/utils/user'
+import { Capability } from '@/utils/permissions'
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 
-const { userInfo } = useUser()
-const { clearUser } = useUser()
+const { userInfo, clearUser, can, hasAny } = useUser()
+const route = useRoute()
 
 const handleCommand = (command) => {
   if (command == 'profile') {
@@ -112,4 +82,53 @@ const handleCommand = (command) => {
     router.push('/manager/password')
   }
 }
+
+const menus = [
+  { label: '系统首页', path: '/manager/home', icon: IconMenu },
+  {
+    label: 'AI 智能助手',
+    path: '/manager/ai-chat',
+    icon: ChatDotRound,
+    capability: Capability.USE_AI
+  },
+  { label: '实验室列表', path: '/manager/lablist', icon: OfficeBuilding },
+  {
+    label: '我的预约',
+    path: '/manager/my-reservation',
+    icon: Tickets,
+    anyCapabilities: [Capability.BOOK_EQUIPMENT, Capability.BOOK_LAB]
+  },
+  {
+    label: '预约审核',
+    path: '/manager/audit-reservation',
+    icon: Checked,
+    capability: Capability.AUDIT_RESERVATION
+  },
+  {
+    label: '实验室管理',
+    path: '/manager/lab',
+    icon: House,
+    capability: Capability.MANAGE_RESOURCES
+  },
+  {
+    label: '设备管理',
+    path: '/manager/equ',
+    icon: Setting,
+    capability: Capability.MANAGE_RESOURCES
+  },
+  {
+    label: '用户管理',
+    path: '/manager/user',
+    icon: User,
+    capability: Capability.MANAGE_USERS
+  }
+]
+
+const visibleMenus = computed(() =>
+  menus.filter((item) => {
+    if (item.capability) return can(item.capability)
+    if (item.anyCapabilities) return hasAny(item.anyCapabilities)
+    return true
+  })
+)
 </script>

@@ -69,7 +69,7 @@ const { userInfo } = useUser()
 const labTotal = ref('-')
 const reservationTotal = ref('-')
 
-const roleLabel = computed(() => (userInfo.value?.role === 'admin' ? '管理员' : '学生'))
+const roleLabel = computed(() => userInfo.value?.display_name || '用户')
 
 const statCards = computed(() => [
   { label: '开放实验室（约）', value: labTotal.value },
@@ -102,7 +102,7 @@ const shortcuts = computed(() => {
     list.push(
       { label: '预约审核', path: '/manager/audit-reservation' },
       { label: '实验室管理', path: '/manager/lab' },
-      { label: '设备管理', path: '/manager/equipment' },
+      { label: '设备管理', path: '/manager/equ' },
       { label: '用户管理', path: '/manager/user' }
     )
   }

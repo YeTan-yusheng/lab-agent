@@ -64,7 +64,13 @@
           @keydown.enter.exact.prevent="handleSend"
           @keydown.enter.shift.stop
         ></el-input>
-        <el-button type="primary" @click="handleSend" :loading="loading">发送</el-button>
+        <el-button
+          :disabled="!can(Capability.USE_AI)"
+          type="primary"
+          @click="handleSend"
+          :loading="loading"
+          >发送</el-button
+        >
       </div>
     </el-card>
   </div>
@@ -76,7 +82,10 @@ import { ref, reactive, nextTick } from 'vue'
 import { marked } from 'marked'
 import { ElMessage } from 'element-plus'
 import DOMPurify from 'dompurify' // 过滤危险的 HTML，防止 XSS 攻击
+import { useUser } from '@/utils/user'
+import { Capability } from '@/utils/permissions'
 
+const { can } = useUser()
 const messages = ref([
   {
     role: 'assistant',

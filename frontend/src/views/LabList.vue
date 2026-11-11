@@ -54,7 +54,11 @@
               </div>
               <div style="margin-top: 12px; display: flex; gap: 8px">
                 <el-button style="flex: 1" @click="handleViewEquipment(item)">查看设备</el-button>
-                <el-button style="flex: 1" type="primary" @click="handleReserve(item)"
+                <el-button
+                  style="flex: 1"
+                  v-if="can(Capability.BOOK_LAB)"
+                  type="primary"
+                  @click="handleReserve(item)"
                   >预约</el-button
                 >
               </div>
@@ -89,7 +93,10 @@ import { getLabPageList } from '@/api/lab'
 import { Search } from '@element-plus/icons-vue'
 import router from '@/router'
 import ReserveDialog from '@/components/ReserveDialog.vue'
+import Capability from '@/utils/permissions'
+import { useUser } from '@/utils/user'
 
+const { can } = useUser()
 const reserveVisible = ref(false)
 const currentLab = ref(null)
 const params = reactive({

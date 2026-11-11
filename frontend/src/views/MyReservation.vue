@@ -51,7 +51,12 @@
         </el-table-column>
         <el-table-column label="操作" width="100">
           <template #default="{ row }">
-            <el-button v-if="row.status === 0" type="danger" text bg @click="handleCancel(row)"
+            <el-button
+              v-if="row.status === 0 && row.user_id === userInfo.id"
+              type="danger"
+              text
+              bg
+              @click="handleCancel(row)"
               >取消</el-button
             >
           </template>
@@ -76,6 +81,9 @@
 import { ref, reactive, onMounted } from 'vue'
 import { cancelReservationApi, getReservationPageList } from '@/api/reservation'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import { useUser } from '@/utils/user'
+
+const { userInfo } = useUser()
 const loading = ref(false)
 const tableData = ref([])
 const total = ref(0)
@@ -97,7 +105,7 @@ const load = async () => {
     const res = await getReservationPageList(params)
     if (res.code === 200) {
       tableData.value = res.data?.list
-      total.value = res.total?.total ?? 0
+      total.value = res.data?.total ?? 0
     }
   } finally {
     loading.value = false
