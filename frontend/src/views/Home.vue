@@ -61,10 +61,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useUser } from '@/utils/user'
+import { Capability } from '@/utils/permissions'
 import { getLabPageList } from '@/api/lab'
 import { getReservationPageList } from '@/api/reservation'
 
-const { userInfo } = useUser()
+const { userInfo, can, hasAny } = useUser()
 
 const labTotal = ref('-')
 const reservationTotal = ref('-')
@@ -93,19 +94,33 @@ const features = [
 ]
 
 const shortcuts = computed(() => {
-  const list = [
-    { label: 'AI 智能助手', path: '/manager/ai-chat' },
-    { label: '实验室列表', path: '/manager/lablist' },
-    { label: '我的预约', path: '/manager/my-reservation' }
-  ]
-  if (userInfo.value?.role === 'admin') {
+  const list = []
+
+  if (can(Capability.USE_AI)) {
+    list.push({ label: 'AI 智能助手', path: '/manager/ai-chat' })
+  }
+
+  list.push({ label: '实验室列表', path: '/manager/lablist' })
+
+  if (hasAny([Capability.BOOK_EQUIPMENT, Capability.BOOK_LAB])) {
+    list.push({ label: '我的预约', path: '/manager/my-reservation' })
+  }
+
+  if (can(Capability.AUDIT_RESERVATION)) {
+    list.push({ label: '预约审核', path: '/manager/audit-reservation' })
+  }
+
+  if (can(Capability.MANAGE_RESOURCES)) {
     list.push(
-      { label: '预约审核', path: '/manager/audit-reservation' },
       { label: '实验室管理', path: '/manager/lab' },
-      { label: '设备管理', path: '/manager/equ' },
-      { label: '用户管理', path: '/manager/user' }
+      { label: '设备管理', path: '/manager/equ' }
     )
   }
+
+  if (can(Capability.MANAGE_USERS)) {
+    list.push({ label: '用户管理', path: '/manager/user' })
+  }
+
   return list
 })
 
