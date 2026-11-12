@@ -346,3 +346,41 @@ def test_create_user_role_rows_are_unique(db, users):
         )
         == 1
     )
+
+
+def test_admin_can_get_user_detail_with_roles(client, db, users):
+    target = _create_user(db, "teacher_admin_detail", ["teacher", "admin"])
+
+    response = client.get(
+        f"/api/user/{target.id}",
+        headers=_admin_headers(client, users),
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["roles"] == ["teacher", "admin"]
+    assert data["display_name"] == "教师/管理员"
+    assert "capabilities" not in data
+    assert "password" not in data
+
+
+def test_non_admin_cannot_get_user_detail(client, users):
+    target = users["target1"]
+    token = _login(client, "teacher1").json()["data"]["token"]
+
+    response = client.get(
+        f"/api/user/{target.id}",
+        headers=_bearer(token),
+    )
+
+    assert response.status_code == 403
+
+
+def test_get_user_detail_returns_404_for_unknown_user(client, users):
+    response = client.get(
+        "/api/user/999999",
+        headers=_admin_headers(client, users),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == 404
