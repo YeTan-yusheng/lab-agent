@@ -38,15 +38,32 @@ def update_user_info(
     return build_current_user(user)
 
 
-def update_password(db: Session, user: User, payload: PasswordUpdateRequest):
+def update_password(
+    request: Request, db: Session, user: User, payload: PasswordUpdateRequest
+):
     if not verify_password(payload.old_password, user.password):
-        raise BusinessException(code=401, message="原密码错误")
+        raise BusinessException(code=400, message="原密码错误")
     if payload.new_password == payload.old_password:
         raise BusinessException(code=400, message="新密码不能与原密码相同")
 
     user.password = hash_password(payload.new_password)
     user.token_version += 1
-    db.commit()
+
+    audit_dict = {
+        "actor_user_id": user.id,
+        "target_user_id": user.id,
+        "action": ActionType.reset_password,
+        "request_id": request.state.request_id,
+    }
+    try:
+        db.flush()
+        add_success_audit(db, result="success", **audit_dict)
+        db.commit()
+    except SQLAlchemyError as e:
+        db.rollback()
+        write_failed_audit(
+            result="failed", error_code=str(type(e).__name__), **audit_dict
+        )
     db.refresh(user)
 
 

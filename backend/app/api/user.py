@@ -34,11 +34,12 @@ def update_user_info(
 
 @router.put("/password")
 def update_password(
+    request: Request,
     payload: PasswordUpdateRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user_service.update_password(db, current_user, payload)
+    user_service.update_password(request, db, current_user, payload)
     return Response.success()
 
 
