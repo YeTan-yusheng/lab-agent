@@ -17,7 +17,7 @@ PASSWORD_HASH = hash_password("123456")
 
 
 @pytest.fixture()
-def db():
+def session_factory():
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -25,9 +25,14 @@ def db():
     )
     Base.metadata.create_all(engine)
     TestSessionLocal = sessionmaker(bind=engine, autoflush=False)
-    with TestSessionLocal() as session:
-        yield session
+    yield TestSessionLocal
     engine.dispose()
+
+
+@pytest.fixture()
+def db(session_factory):
+    with session_factory() as session:
+        yield session
 
 
 def _create_user(db, username, roles, *, status=1):
@@ -159,10 +164,14 @@ def test_teacher_direct_lab_tool_access_is_allowed(db, users):
     assert denied is None
 
 
-def test_disabled_user_cannot_call_write_tool(db, users, lab_equipment):
+def test_disabled_user_cannot_call_write_tool(
+    db, session_factory, users, lab_equipment
+):
     user = users["teacher"]
     lab, _ = lab_equipment
-    tools = agent_tools.build_tools(db, user)
+    tools = agent_tools.build_tools(
+        db, user, audit_session_factory=session_factory
+    )
     lab_tool = next(tool for tool in tools if tool.name == "create_lab_reservation")
 
     user.status = 0
@@ -180,10 +189,14 @@ def test_disabled_user_cannot_call_write_tool(db, users, lab_equipment):
     assert _payload(result)["code"] == 403
 
 
-def test_stale_lab_tool_rechecks_role_after_role_change(db, users, lab_equipment):
+def test_stale_lab_tool_rechecks_role_after_role_change(
+    db, session_factory, users, lab_equipment
+):
     user = users["teacher"]
     lab, _ = lab_equipment
-    tools = agent_tools.build_tools(db, user)
+    tools = agent_tools.build_tools(
+        db, user, audit_session_factory=session_factory
+    )
     lab_tool = next(tool for tool in tools if tool.name == "create_lab_reservation")
 
     # 模拟会话中途收回教师角色
@@ -207,11 +220,13 @@ def test_stale_lab_tool_rechecks_role_after_role_change(db, users, lab_equipment
 
 
 def test_create_equipment_reservation_returns_structured_success(
-    db, users, lab_equipment
+    db, session_factory, users, lab_equipment
 ):
     user = users["student"]
     lab, equipment = lab_equipment
-    tools = agent_tools.build_tools(db, user)
+    tools = agent_tools.build_tools(
+        db, user, audit_session_factory=session_factory
+    )
     tool = next(
         item for item in tools if item.name == "create_equipment_reservation"
     )
@@ -231,10 +246,12 @@ def test_create_equipment_reservation_returns_structured_success(
 
 
 def test_create_lab_reservation_returns_structured_business_error(
-    db, users, lab_equipment
+    db, session_factory, users, lab_equipment
 ):
     user = users["teacher"]
-    tools = agent_tools.build_tools(db, user)
+    tools = agent_tools.build_tools(
+        db, user, audit_session_factory=session_factory
+    )
     tool = next(item for item in tools if item.name == "create_lab_reservation")
 
     result = tool.invoke(
@@ -249,3 +266,39 @@ def test_create_lab_reservation_returns_structured_business_error(
     payload = _payload(result)
     assert payload["ok"] is False
     assert payload["code"] == 404
+
+
+def test_list_open_labs_returns_json(
+    db, session_factory, users, lab_equipment
+):
+    user = users["student"]
+    lab, _ = lab_equipment
+    tools = agent_tools.build_tools(
+        db, user, audit_session_factory=session_factory
+    )
+    tool = next(item for item in tools if item.name == "list_open_labs")
+
+    result = tool.invoke({})
+
+    payload = _payload(result)
+    assert payload.get("total") == 1, payload
+    assert payload["labs"][0]["id"] == lab.id
+    assert payload["labs"][0]["name"] == lab.name
+
+
+def test_list_lab_equipments_returns_json(
+    db, session_factory, users, lab_equipment
+):
+    user = users["student"]
+    lab, equipment = lab_equipment
+    tools = agent_tools.build_tools(
+        db, user, audit_session_factory=session_factory
+    )
+    tool = next(item for item in tools if item.name == "list_lab_equipments")
+
+    result = tool.invoke({"lab_id": lab.id})
+
+    payload = _payload(result)
+    assert payload.get("total") == 1, payload
+    assert payload["equipments"][0]["id"] == equipment.id
+    assert payload["equipments"][0]["lab_id"] == lab.id

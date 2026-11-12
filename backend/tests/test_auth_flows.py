@@ -1,5 +1,7 @@
+import uuid
+
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
@@ -18,6 +20,7 @@ from app.core.exceptions import (
 )
 from app.core.password import hash_password
 from app.models.base import Base
+from app.models.process_audit import ActionType, ProcessAudit
 from app.models.user import User, UserRoles
 
 PASSWORD_HASH = hash_password("123456")
@@ -123,6 +126,16 @@ def users(db):
 def _build_app():
     app = FastAPI()
     app.include_router(api_router)
+
+    @app.middleware("http")
+    async def request_id_middleware(request: Request, call_next):
+        request.state.request_id = (
+            request.headers.get("X-Request-ID") or uuid.uuid4().hex
+        )
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request.state.request_id
+        return response
+
     app.add_exception_handler(BusinessException, bussiness_excpetion_hadler)
     app.add_exception_handler(HTTPException, http_excpetion_hadler)
     app.add_exception_handler(RequestValidationError, validation_excpetion_hadler)
@@ -276,6 +289,31 @@ def test_password_change_invalidates_old_token(client, db, users):
     user = db.scalar(select(User).where(User.username == "student01"))
     db.refresh(user)
     assert user.token_version == 1
+
+
+def test_password_change_writes_reset_audit(client, db, users):
+    user = users["student01"]
+    token = _login(client, "student01").json()["data"]["token"]
+
+    response = client.put(
+        "/api/user/password",
+        json={"old_password": "123456", "new_password": "654321"},
+        headers=_bearer(token),
+    )
+
+    assert response.status_code == 200
+    db.expire_all()
+    audits = db.scalars(
+        select(ProcessAudit).where(ProcessAudit.action == ActionType.reset_password)
+    ).all()
+    assert len(audits) == 1
+    audit = audits[0]
+    assert audit.actor_user_id == user.id
+    assert audit.target_user_id == user.id
+    assert audit.result == "success"
+    assert audit.request_id
+    assert audit.old_roles is None
+    assert audit.new_roles is None
 
 
 def test_disabled_user_cannot_login(client, users):
