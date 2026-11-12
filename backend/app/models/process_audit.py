@@ -52,3 +52,28 @@ class ProcessAudit(Base):
     )
     ip: Mapped[str | None] = mapped_column(String(45), comment="操作来源")
     user_agent: Mapped[str | None] = mapped_column(String(255), comment="用户代理")
+
+
+class AgentToolCallingAudit(Base):
+    __tablename__ = "agent_tool_calling_audit"
+    __table_args__ = (
+        Index("idx_user_create_time", "user_id", "create_time"),
+        Index("idx_tool_create_time", "tool_name", "create_time"),
+        {"comment": "AI工具调用审计表"},
+    )
+
+    user_id: Mapped[int] = mapped_column(comment="调用用户ID", nullable=False)
+    roles: Mapped[str] = mapped_column(String(50), comment="用户角色", nullable=False)
+    capability: Mapped[str] = mapped_column(
+        String(50), comment="用户能力", nullable=False
+    )
+    tool_name: Mapped[str] = mapped_column(
+        String(50), comment="调用工具名称", nullable=False
+    )
+    result: Mapped[str] = mapped_column(
+        String(10), comment="success/failed", nullable=False
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64), comment="错误码")
+    request_id: Mapped[str] = mapped_column(
+        String(64), comment="请求ID", nullable=False
+    )

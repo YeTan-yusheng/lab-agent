@@ -1,5 +1,5 @@
 import json
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -19,11 +19,13 @@ def _sse_line(payload: dict) -> str:
 
 @router.post("/chat/stream")
 def chat(
+    request: Request,
     data: ChatRequest,
     current_user: User = Depends(require_capability(Capability.use_ai)),
     db: Session = Depends(get_db),
 ):
     user_id = current_user.id
+    request_id = request.state.request_id
 
     async def event_generator():
         with SessionLocal() as db:
@@ -33,7 +35,9 @@ def chat(
                     {"type": "error", "message": "用户不存在或已被禁用，请重新登录"}
                 )
                 return
-            async for event in agent_service.stream_agent(db, stream_user, data):
+            async for event in agent_service.stream_agent(
+                db, stream_user, data, request_id=request_id
+            ):
                 yield _sse_line(event)
 
     return StreamingResponse(

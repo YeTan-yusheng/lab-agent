@@ -1,3 +1,4 @@
+from fastapi import Request
 from sqlalchemy.orm import Session
 from langchain_openai import ChatOpenAI
 from langgraph.graph import MessagesState, StateGraph, START
@@ -42,9 +43,17 @@ TOOL_LABELS = {
 }
 
 
-def build_agent(db: Session, current_user: User):
+def build_agent(
+    db,
+    current_user,
+    *,
+    request_id: str | None = None,
+    thread_id: str | None = None,
+):
     profile = get_role_profile(current_user)
-    tools = agent_tools.build_tools(db, current_user, profile)
+    tools = agent_tools.build_tools(
+        db, current_user, profile, request_id=request_id, thread_id=thread_id
+    )
     llm = ChatOpenAI(
         api_key=settings.llm_api_key,
         base_url=settings.llm_base_url,
@@ -108,12 +117,19 @@ def _build_history(data: ChatRequest) -> list:
 
 
 async def stream_agent(
-    db: Session, current_user: User, data: ChatRequest
+    db,
+    current_user,
+    data,
+    *,
+    request_id: str | None = None,
+    thread_id: str | None = None,
 ) -> AsyncIterator[dict]:
     """流式大模型对话"""
     try:
         history = _build_history(data)
-        agent = build_agent(db, current_user)
+        agent = build_agent(
+            db, current_user, request_id=request_id, thread_id=thread_id
+        )
         inputs = {"messages": [SystemMessage(content=SYSTEM_PROMPT), *history]}
 
         yield {"type": "status", "message": "正在思考..."}

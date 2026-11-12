@@ -1,5 +1,8 @@
 import json
 from dataclasses import dataclass
+from collections.abc import Callable
+import uuid
+from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from langchain_core.tools import tool
@@ -16,6 +19,20 @@ from app.core.permissions import (
     get_role_profile,
     validate_roles,
 )
+from app.core.database import SessionLocal
+from app.services.audit_service import (
+    add_success_tool_calling_audit,
+    write_failed_tool_calling_audit,
+)
+
+
+@dataclass(frozen=True)
+class ToolContext:
+    db: Session
+    user_id: int
+    request_id: str
+    thread_id: str | None = None
+    audit_session_factory: Callable = SessionLocal
 
 
 @dataclass(frozen=True)
@@ -74,28 +91,121 @@ def _fresh_profile(db: Session, user_id: int) -> tuple[User | None, RoleProfile 
     return user, profile
 
 
-def _tool_access_error(
+def _check_tool_access(
     db: Session,
     user_id: int,
-    tool_name: str,
+    spec: ToolSpec,
     *,
     owner_user_id: int | None = None,
-) -> str | None:
+) -> tuple[RoleProfile | None, str | None]:
     """检查用户是否有权限使用指定的工具"""
-    spec = TOOL_SPEC_BY_NAME.get(tool_name)
-    if spec is None:
-        return _permission_error(f"未知的工具: {tool_name}")
-
     user, profile = _fresh_profile(db, user_id)
+
     if user is None:
-        return _permission_error("用户不存在或已被禁用")
+        return None, _permission_error("用户不存在或已被禁用")
     if profile is None:
-        return _permission_error("当前账号没有使用该工具权限")
-    if spec.owner_only and user_id != owner_user_id:
-        return _permission_error("只能操作本人的数据")
+        return None, _permission_error("当前账号没有使用该工具权限")
+    if spec.owner_only and owner_user_id != user_id:
+        return profile, _permission_error("只能操作本人的数据")
     if not profile.has(spec.required_capability):
-        return _permission_error("没有操作权限")
-    return None
+        return profile, _permission_error("没有操作权限")
+
+    return profile, None
+
+
+def _write_tool_audit(
+    context: ToolContext,
+    spec: ToolSpec,
+    profile: RoleProfile | None,
+    *,
+    result: str,
+    error_code: str | None = None,
+) -> None:
+    roles = (
+        json.dumps([role.value for role in profile.roles], ensure_ascii=False)
+        if profile
+        else json.dumps([])
+    )
+
+    payload = {
+        "user_id": context.user_id,
+        "roles": roles,
+        "capability": spec.required_capability.value,
+        "tool_name": spec.name,
+        "request_id": context.request_id,
+        "result": result,
+        "error_code": error_code,
+    }
+
+    if result == "success":
+        with context.audit_session_factory() as audit_db:
+            add_success_tool_calling_audit(audit_db, **payload)
+            audit_db.commit()
+    else:
+        write_failed_tool_calling_audit(
+            session_factory=context.audit_session_factory,
+            **payload,
+        )
+
+
+def _execute_tool(
+    context: ToolContext,
+    spec: ToolSpec,
+    handler: Callable[[], str],
+    *,
+    owner_user_id: int | None = None,
+) -> str:
+    """Agent审计执行工具"""
+    profile, denied = _check_tool_access(
+        context.db, context.user_id, spec, owner_user_id=owner_user_id
+    )
+
+    if denied:
+        _write_tool_audit(
+            context,
+            spec,
+            profile,
+            result="failed",
+            error_code="403",
+        )
+        return denied
+
+    try:
+        result = handler()
+    except BusinessException as e:
+        _write_tool_audit(
+            context,
+            spec,
+            profile,
+            result="failed",
+            error_code=str(e.code),
+        )
+        return json.dumps(
+            {"ok": False, "code": e.code, "error": e.message},
+            ensure_ascii=False,
+        )
+    except Exception as e:
+        _write_tool_audit(
+            context,
+            spec,
+            profile,
+            result="failed",
+            error_code=type(e).__name__,
+        )
+        return json.dumps(
+            {"ok": False, "code": 500, "error": "工具执行失败"},
+            ensure_ascii=False,
+        )
+    try:
+        _write_tool_audit(
+            context,
+            spec,
+            profile,
+            result="success",
+        )
+    except Exception as e:
+        print(f"写入工具调用审计失败: {e}")
+    return result
 
 
 def visible_specs(profile: RoleProfile) -> list[ToolSpec]:
@@ -103,32 +213,27 @@ def visible_specs(profile: RoleProfile) -> list[ToolSpec]:
     return [spec for spec in TOOL_SPECS if profile.has(spec.required_capability)]
 
 
-def _build_all_tools(db: Session, current_user: User):
+def _build_all_tools(context: ToolContext):
     """构建所有工具的实现，返回一个列表，后续会根据用户角色权限过滤"""
+    db = context.db
+    current_user = db.execute(
+        select(User).where(User.id == context.user_id)
+    ).scalar_one_or_none()
 
     @tool
     def search_lab_docs(query: str):
-        """查询知识库库"""
-        denied = _tool_access_error(db, current_user.id, "search_lab_docs")
-        if denied:
-            return denied
-
-        try:
-            return kb_service.search(query) or "没有找到相关资料"
-        except Exception as e:
-            return json.dumps(
-                {"ok": False, "error": "search_lab_docs\n" + str(e)},
-                ensure_ascii=False,
-            )
+        """查询知识库"""
+        return _execute_tool(
+            context,
+            TOOL_SPEC_BY_NAME["search_lab_docs"],
+            lambda: kb_service.search(query) or "没有找到相关资料",
+        )
 
     @tool
     def list_open_labs(keywords: str = "") -> str:
         """查询开放实验室"""
-        denied = _tool_access_error(db, current_user.id, "list_open_labs")
-        if denied:
-            return denied
 
-        try:
+        def handler():
             keywords = keywords.strip() or None
             page = lab_service.get_labs_page_list(
                 db, page=1, page_size=10, keywords=keywords, status=1
@@ -146,19 +251,14 @@ def _build_all_tools(db: Session, current_user: User):
                 for item in page.list
             ]
             return json.dumps({"total": page.total, "labs": rows}, ensure_ascii=False)
-        except Exception as e:
-            return json.dumps(
-                {"ok": False, "error": "list_open_labs\n" + str(e)}, ensure_ascii=False
-            )
+
+        return _execute_tool(context, TOOL_SPEC_BY_NAME["list_open_labs"], handler)
 
     @tool
     def list_lab_equipments(lab_id: int, keywords: str = "") -> str:
         """查询实验室设备"""
-        denied = _tool_access_error(db, current_user.id, "list_lab_equipments")
-        if denied:
-            return denied
 
-        try:
+        def handler():
             keywords = keywords.strip() or None
             page = equipment_service.get_equipment_page_list(
                 db, page=1, page_size=10, lab_id=lab_id, keywords=keywords
@@ -179,11 +279,8 @@ def _build_all_tools(db: Session, current_user: User):
             return json.dumps(
                 {"total": page.total, "equipments": rows}, ensure_ascii=False
             )
-        except Exception as e:
-            return json.dumps(
-                {"ok": False, "error": "list_lab_equipments\n" + str(e)},
-                ensure_ascii=False,
-            )
+
+        return _execute_tool(context, TOOL_SPEC_BY_NAME["list_lab_equipments"], handler)
 
     @tool
     def create_equipment_reservation(
@@ -194,22 +291,19 @@ def _build_all_tools(db: Session, current_user: User):
         end_time: str,
         remark: str | None = None,
     ):
-        """创建设备预约"""
-        denied = _tool_access_error(
-            db,
-            current_user.id,
-            "create_equipment_reservation",
-        )
-        if denied:
-            return denied
-
-        return _create_reservation(
-            lab_id=lab_id,
-            equipment_id=equipment_id,
-            date=date,
-            start_time=start_time,
-            end_time=end_time,
-            remark=remark,
+        """预约实验室设备"""
+        spec = TOOL_SPEC_BY_NAME["create_equipment_reservation"]
+        return _execute_tool(
+            context,
+            spec,
+            lambda: _create_reservation(
+                lab_id=lab_id,
+                equipment_id=equipment_id,
+                date=date,
+                start_time=start_time,
+                end_time=end_time,
+                remark=remark,
+            ),
         )
 
     @tool
@@ -220,31 +314,29 @@ def _build_all_tools(db: Session, current_user: User):
         end_time: str,
         remark: str | None = None,
     ):
-        """创建实验室预约"""
-        denied = _tool_access_error(
-            db,
-            current_user.id,
-            "create_lab_reservation",
-        )
-        if denied:
-            return denied
-
-        return _create_reservation(
-            lab_id=lab_id,
-            equipment_id=None,
-            date=date,
-            start_time=start_time,
-            end_time=end_time,
-            remark=remark,
+        """预约实验室"""
+        spec = TOOL_SPEC_BY_NAME["create_lab_reservation"]
+        return _execute_tool(
+            context,
+            spec,
+            lambda: _create_reservation(
+                lab_id=lab_id,
+                equipment_id=None,
+                date=date,
+                start_time=start_time,
+                end_time=end_time,
+                remark=remark,
+            ),
         )
 
     @tool
     def get_today() -> str:
         """获取当前时间 格式YYYY-MM-DD HH:MM:SS"""
-        denied = _tool_access_error(db, current_user.id, "get_today")
-        if denied:
-            return denied
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return _execute_tool(
+            context,
+            TOOL_SPEC_BY_NAME["get_today"],
+            lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
 
     def _create_reservation(
         lab_id: int,
@@ -263,16 +355,12 @@ def _build_all_tools(db: Session, current_user: User):
             end_time=end_time,
             remark=remark,
         )
-        try:
-            reservation_service.create_reservation(db, current_user, payload)
-            return json.dumps(
-                {"ok": True, "message": "预约提交成功，等待管理员审核"},
-                ensure_ascii=False,
-            )
-        except BusinessException as e:
-            return json.dumps(
-                {"ok": False, "code": e.code, "error": e.message}, ensure_ascii=False
-            )
+
+        reservation_service.create_reservation(db, current_user, payload)
+        return json.dumps(
+            {"ok": True, "message": "预约提交成功，等待管理员审核"},
+            ensure_ascii=False,
+        )
 
     return [
         search_lab_docs,
@@ -284,9 +372,25 @@ def _build_all_tools(db: Session, current_user: User):
     ]
 
 
-def build_tools(db: Session, current_user: User, profile: RoleProfile | None = None):
+def build_tools(
+    db: Session,
+    current_user: User,
+    profile: RoleProfile | None = None,
+    *,
+    request_id: str | None = None,
+    thread_id: str | None = None,
+    audit_session_factory: Callable = SessionLocal,
+):
     """根据用户角色权限构建可用工具列表"""
     profile = profile or get_role_profile(current_user)
-    all_tools = _build_all_tools(db, current_user)
+
+    context = ToolContext(
+        db=db,
+        user_id=current_user.id,
+        request_id=request_id or uuid.uuid4().hex,
+        thread_id=thread_id,
+        audit_session_factory=audit_session_factory,
+    )
+    all_tools = _build_all_tools(context)
     visible_names = {spec.name for spec in visible_specs(profile)}
     return [tool for tool in all_tools if tool.name in visible_names]
