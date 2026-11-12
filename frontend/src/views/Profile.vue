@@ -55,7 +55,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { useUser } from '@/utils/user'
 import { ElMessage } from 'element-plus'
 
-const { updateUser } = useUser()
+const { userInfo, updateUser } = useUser()
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -106,6 +106,7 @@ const loadUserInfo = async () => {
     if (res.code === 200) {
       Object.assign(form, res.data)
     }
+  } catch {
   } finally {
     loading.value = false
   }
@@ -121,6 +122,7 @@ const handleSubmit = async () => {
       updateUser(res.data)
       ElMessage.success('更新成功')
     }
+  } catch {
   } finally {
     submitting.value = false
   }

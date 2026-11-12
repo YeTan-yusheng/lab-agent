@@ -2,7 +2,6 @@ import json
 from dataclasses import dataclass
 from collections.abc import Callable
 import uuid
-from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from langchain_core.tools import tool
@@ -234,9 +233,9 @@ def _build_all_tools(context: ToolContext):
         """查询开放实验室"""
 
         def handler():
-            keywords = keywords.strip() or None
+            keywords_value = keywords.strip() or None
             page = lab_service.get_labs_page_list(
-                db, page=1, page_size=10, keywords=keywords, status=1
+                db, page=1, page_size=10, keywords=keywords_value, status=1
             )
 
             rows = [
@@ -259,9 +258,9 @@ def _build_all_tools(context: ToolContext):
         """查询实验室设备"""
 
         def handler():
-            keywords = keywords.strip() or None
+            keywords_value = keywords.strip() or None
             page = equipment_service.get_equipment_page_list(
-                db, page=1, page_size=10, lab_id=lab_id, keywords=keywords
+                db, page=1, page_size=10, lab_id=lab_id, keywords=keywords_value
             )
 
             rows = [

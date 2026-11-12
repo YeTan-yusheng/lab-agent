@@ -94,8 +94,10 @@ const handleSubmit = async () => {
       clearUser()
       await router.push('/login')
     }
+  } catch {
   } finally {
     loading.value = false
+    submitting.value = false
   }
 }
 </script>

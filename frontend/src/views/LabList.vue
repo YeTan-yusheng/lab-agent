@@ -127,6 +127,7 @@ const load = async () => {
       tableData.value = res.data?.list
       total.value = res.data?.total
     }
+  } catch {
   } finally {
     loading.value = false
   }

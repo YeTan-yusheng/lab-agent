@@ -50,9 +50,11 @@ export async function chatStreamApi(data, onEvent) {
         if (event.type === 'done' || event.type === 'error') return
       }
     }
+  } catch {
   } finally {
     try {
       await reader.cancel()
+    } catch {
     } finally {
       reader.releaseLock()
     }

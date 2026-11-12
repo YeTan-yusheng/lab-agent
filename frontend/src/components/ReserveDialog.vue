@@ -104,6 +104,7 @@ const handleSubmit = async () => {
       ElMessage.success('预约已提交，请等待审核')
       emit('update:visible', false)
     }
+  } catch {
   } finally {
     submitting.value = false
   }

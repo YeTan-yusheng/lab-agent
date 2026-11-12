@@ -266,6 +266,7 @@ const handleSave = async () => {
       ElMessage.success('操作成功')
       load()
     }
+  } catch {
   } finally {
     formLoading.value = false
   }
@@ -283,6 +284,7 @@ const load = async () => {
       tableData.value = res.data?.list
       total.value = res.data?.total
     }
+  } catch {
   } finally {
     loading.value = false
   }
