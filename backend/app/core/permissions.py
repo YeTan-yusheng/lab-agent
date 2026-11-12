@@ -247,5 +247,6 @@ def booking_capability(equipment_id: int | None) -> Capability:
 
 
 def get_role_profile(user: User) -> RoleProfile:
+    """根据用户角色获取RoleProfile对象"""
     role_codes = [item.role_code for item in user.roles]
     return validate_roles(role_codes)

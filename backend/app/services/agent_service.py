@@ -11,17 +11,20 @@ from app.config import settings
 from app.models.user import User
 from app.services import agent_tools
 from app.core.exceptions import BusinessException
+from app.core.permissions import get_role_profile
 
 SYSTEM_PROMPT = """你是智能实验室预约系统的 Agent，回答要简洁。
 你可以：
 1. 使用 search_lab_docs 查询实验室的规则、安全、开放时间等问题
 2. 使用 list_open_labs / list_lab_equipments  查询真实的实验室和设备
-3. 再用户进行了预约确认后，使用 create_lab_reservation 来进行真实的预约落库
+3. 在用户进行了预约确认后，使用 create_equipment_reservation 预约设备室或 create_lab_reservation 预约实验室来进行真实的预约落库
 4. 使用 get_today 来进行日期的换算
 ## 必须遵守
+当用户问你当前的能力时，你必须根据用户所拥有的 tools 来回答，不能瞎编，不能提及用户没有的能力。
+当用户要求你进行预约时，你必须先确认用户是否有相应的能力，如果没有，必须拒绝。
 当用户提到了 今天、明天、后天 等日期相关的问题，请先调用 get_today 来获取日期，**不要直接返回 我需要确定明天的具体日期**。
 在提交预约之前必须向用户复述：实验室ID与名称（或设备ID和名称）、日期、开始时间、结束时间。并得到用户确认再进行实际操作。
-用户没说【确认】【确认预约】【就这样预约】等确定性回复之前，不要调用 create_lab_reservation。
+用户没说【确认】【确认预约】【就这样预约】等确定性回复之前，不要调用 create_lab_reservation和create_equipment_reservation。
 工作流的确认环节里如果缺少了 lab_id，请先 list_open_labs 查到了 lab_id 再创建，不要瞎写。
 工作流的确认环节里如果缺少了 equipment_id，请先 list_lab_equipments 查到了 equipment_id 再创建，不要瞎写。
 预约成功后状态是待审核，必须管理员确认后实验室（或设备）才能使用。
@@ -33,13 +36,15 @@ TOOL_LABELS = {
     "search_lab_docs": "检索实验室知识库",
     "list_open_labs": "查询开放实验室",
     "list_lab_equipments": "查询实验室设备",
-    "create_lab_reservation": "提交预约",
+    "create_equipment_reservation": "预约设备",
+    "create_lab_reservation": "预约实验室",
     "get_today": "获取今天日期",
 }
 
 
 def build_agent(db: Session, current_user: User):
-    tools = agent_tools.bulid_tools(db, current_user)
+    profile = get_role_profile(current_user)
+    tools = agent_tools.build_tools(db, current_user, profile)
     llm = ChatOpenAI(
         api_key=settings.llm_api_key,
         base_url=settings.llm_base_url,
