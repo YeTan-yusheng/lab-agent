@@ -149,6 +149,8 @@ def test_create_user_writes_audit_with_target_id(db, users, fake_request):
     assert audit.action == ActionType.create_user
     assert audit.result == "success"
     assert audit.request_id == "req-test-001"
+    assert audit.old_roles is None
+    assert audit.new_roles is None
 
 
 def test_disable_user_writes_audit(db, users, fake_request):
@@ -171,6 +173,32 @@ def test_disable_user_writes_audit(db, users, fake_request):
     assert audit.action == ActionType.disable_user
     assert audit.result == "success"
     assert audit.request_id == "req-test-001"
+    assert audit.old_roles is None
+    assert audit.new_roles is None
+
+
+def test_enable_user_writes_audit(db, users, fake_request):
+    admin = users["admin"]
+    target = _create_user(db, "disabled_audit", ["student"], status=0)
+
+    user_service.update_user(
+        fake_request,
+        db,
+        target.id,
+        UserUpdateRequest(status=1),
+        admin,
+    )
+
+    audits = _audits(db)
+    assert len(audits) == 1
+    audit = audits[0]
+    assert audit.actor_user_id == admin.id
+    assert audit.target_user_id == target.id
+    assert audit.action == ActionType.enable_user
+    assert audit.result == "success"
+    assert audit.request_id == "req-test-001"
+    assert audit.old_roles is None
+    assert audit.new_roles is None
 
 
 def test_delete_user_writes_audit(db, users, fake_request):
@@ -187,3 +215,5 @@ def test_delete_user_writes_audit(db, users, fake_request):
     assert audit.action == ActionType.delete_user
     assert audit.result == "success"
     assert audit.request_id == "req-test-001"
+    assert audit.old_roles is None
+    assert audit.new_roles is None

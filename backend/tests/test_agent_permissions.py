@@ -134,29 +134,29 @@ def test_no_role_gets_audit_tool(db, users):
 
 
 def test_admin_direct_tool_access_is_rejected(db, users):
-    result = agent_tools._tool_access_error(
-        db, users["admin"].id, "create_lab_reservation"
-    )
+    spec = agent_tools.TOOL_SPEC_BY_NAME["create_lab_reservation"]
+    profile, denied = agent_tools._check_tool_access(db, users["admin"].id, spec)
 
-    assert result is not None
-    assert _payload(result)["code"] == 403
+    assert profile is not None
+    assert denied is not None
+    assert _payload(denied)["code"] == 403
 
 
 def test_student_direct_lab_tool_access_is_rejected(db, users):
-    result = agent_tools._tool_access_error(
-        db, users["student"].id, "create_lab_reservation"
-    )
+    spec = agent_tools.TOOL_SPEC_BY_NAME["create_lab_reservation"]
+    profile, denied = agent_tools._check_tool_access(db, users["student"].id, spec)
 
-    assert result is not None
-    assert _payload(result)["code"] == 403
+    assert profile is not None
+    assert denied is not None
+    assert _payload(denied)["code"] == 403
 
 
 def test_teacher_direct_lab_tool_access_is_allowed(db, users):
-    result = agent_tools._tool_access_error(
-        db, users["teacher"].id, "create_lab_reservation"
-    )
+    spec = agent_tools.TOOL_SPEC_BY_NAME["create_lab_reservation"]
+    profile, denied = agent_tools._check_tool_access(db, users["teacher"].id, spec)
 
-    assert result is None
+    assert profile is not None
+    assert denied is None
 
 
 def test_disabled_user_cannot_call_write_tool(db, users, lab_equipment):
