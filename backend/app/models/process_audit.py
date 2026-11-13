@@ -1,7 +1,7 @@
 from enum import StrEnum
 
 from sqlalchemy import Index, String, Enum as SAEnum
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 

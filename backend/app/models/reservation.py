@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -9,7 +9,21 @@ from app.models.user import User
 
 class Reservation(Base):
     __tablename__ = "reservations"
-    __table_args__ = {"comment": "预约信息"}
+    __table_args__ = (
+        Index(
+            "ix_reservations_lab_date_status",
+            "lab_id",
+            "date",
+            "status",
+        ),
+        Index(
+            "ix_reservations_equipment_date_status",
+            "equipment_id",
+            "date",
+            "status",
+        ),
+        {"comment": "预约信息"},
+    )
 
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id"), comment="预约人", nullable=False
