@@ -8,8 +8,10 @@ from app.core.permissions import RoleValidationError, validate_roles
 from app.models.base import Base
 from app.models.equipment import Equipment
 from app.models.lab import Lab
+from app.models.lab_closed_day import LabClosedDay
 from app.models.user import User, UserRoles
 from scripts.seed import (
+    DEMO_CLOSED_DAYS,
     DEMO_EQUIPMENTS,
     DEMO_LABS,
     SEED_USERS,
@@ -194,6 +196,9 @@ def test_demo_data_is_idempotent(db):
     assert count(db, Equipment) == sum(
         len(items) for items in DEMO_EQUIPMENTS.values()
     )
+    assert count(db, LabClosedDay) == sum(
+        len(items) for items in DEMO_CLOSED_DAYS.values()
+    )
 
     second = seed_demo_data(db)
     db.commit()
@@ -203,6 +208,43 @@ def test_demo_data_is_idempotent(db):
     assert count(db, Equipment) == sum(
         len(items) for items in DEMO_EQUIPMENTS.values()
     )
+    assert count(db, LabClosedDay) == sum(
+        len(items) for items in DEMO_CLOSED_DAYS.values()
+    )
+
+
+def test_demo_closed_days_have_reason(db):
+    seed_demo_data(db)
+    db.commit()
+
+    closed_days = db.scalars(select(LabClosedDay).order_by(LabClosedDay.lab_id)).all()
+
+    assert len(closed_days) == sum(
+        len(items) for items in DEMO_CLOSED_DAYS.values()
+    )
+    assert all(item.reason for item in closed_days)
+
+
+def test_demo_closed_day_does_not_overwrite_reason(db):
+    seed_demo_data(db)
+    db.commit()
+
+    lab = db.scalar(select(Lab).where(Lab.name == "计算机实验室"))
+    closed_day = db.scalar(
+        select(LabClosedDay).where(
+            LabClosedDay.lab_id == lab.id,
+            LabClosedDay.date == DEMO_CLOSED_DAYS["计算机实验室"][0]["date"],
+        )
+    )
+    closed_day.reason = "旧原因"
+    db.commit()
+
+    result = seed_demo_data(db)
+    db.commit()
+
+    assert result.closed_days_created == []
+    db.refresh(closed_day)
+    assert closed_day.reason == "旧原因"
 
 
 def test_demo_data_dry_run_does_not_write(db):
@@ -212,5 +254,9 @@ def test_demo_data_dry_run_does_not_write(db):
     assert len(result.equipments_created) == sum(
         len(items) for items in DEMO_EQUIPMENTS.values()
     )
+    assert len(result.closed_days_created) == sum(
+        len(items) for items in DEMO_CLOSED_DAYS.values()
+    )
     assert count(db, Lab) == 0
     assert count(db, Equipment) == 0
+    assert count(db, LabClosedDay) == 0

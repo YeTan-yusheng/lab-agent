@@ -5,6 +5,8 @@
 import argparse
 import sys
 from dataclasses import dataclass, field
+from datetime import date
+
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, select, text
@@ -16,6 +18,7 @@ from app.core.password import hash_password
 from app.core.permissions import Role, validate_roles
 from app.models.equipment import Equipment
 from app.models.lab import Lab
+from app.models.lab_closed_day import LabClosedDay
 from app.models.user import User, UserRoles
 
 SEED_USERS = [
@@ -45,6 +48,15 @@ DEMO_LABS = [
         "status": 1,
     },
 ]
+
+DEMO_CLOSED_DAYS = {
+    "计算机实验室": [
+        {"date": date(2099, 12, 31), "reason": "元旦闭馆演示"},
+    ],
+    "化学实验室": [
+        {"date": date(2099, 12, 31), "reason": "元旦闭馆演示"},
+    ],
+}
 
 DEMO_EQUIPMENTS = {
     "计算机实验室": [
@@ -108,10 +120,15 @@ class SeedUserResult:
 class DemoSeedResult:
     labs_created: list[str] = field(default_factory=list)
     equipments_created: list[str] = field(default_factory=list)
+    closed_days_created: list[str] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
-        return bool(self.labs_created or self.equipments_created)
+        return bool(
+            self.labs_created
+            or self.equipments_created
+            or self.closed_days_created
+        )
 
 
 def seed_user(
@@ -192,6 +209,10 @@ def seed_demo_data(db: Session, dry_run: bool = False) -> DemoSeedResult:
                     f"{lab_name}/{item['name']}"
                     for item in DEMO_EQUIPMENTS.get(lab_name, [])
                 )
+                result.closed_days_created.extend(
+                    f"{lab_name}/{item['date'].isoformat()}"
+                    for item in DEMO_CLOSED_DAYS.get(lab_name, [])
+                )
                 continue
             lab = Lab(**lab_spec)
             db.add(lab)
@@ -208,6 +229,26 @@ def seed_demo_data(db: Session, dry_run: bool = False) -> DemoSeedResult:
                 result.equipments_created.append(f"{lab_name}/{equipment_spec['name']}")
                 if not dry_run:
                     db.add(Equipment(lab_id=lab.id, **equipment_spec))
+
+        for closed_day_spec in DEMO_CLOSED_DAYS.get(lab_name, []):
+            existing = db.scalar(
+                select(LabClosedDay).where(
+                    LabClosedDay.lab_id == lab.id,
+                    LabClosedDay.date == closed_day_spec["date"],
+                )
+            )
+            if existing is None:
+                result.closed_days_created.append(
+                    f"{lab_name}/{closed_day_spec['date'].isoformat()}"
+                )
+                if not dry_run:
+                    db.add(
+                        LabClosedDay(
+                            lab_id=lab.id,
+                            date=closed_day_spec["date"],
+                            reason=closed_day_spec["reason"],
+                        )
+                    )
 
     if not dry_run:
         db.flush()
@@ -266,6 +307,8 @@ def format_demo_result(result: DemoSeedResult, dry_run: bool) -> str:
         parts.append("create labs: " + ", ".join(result.labs_created))
     if result.equipments_created:
         parts.append("create equipments: " + ", ".join(result.equipments_created))
+    if result.closed_days_created:
+        parts.append("create closed days: " + ", ".join(result.closed_days_created))
     return f"{prefix}demo data: " + "; ".join(parts)
 
 
