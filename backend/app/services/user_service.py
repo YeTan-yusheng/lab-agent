@@ -29,7 +29,7 @@ def get_user_info(user: User) -> CurrentUserResponse:
 def update_user_info(
     db: Session, user: User, payload: UserUpdateRequest
 ) -> CurrentUserResponse:
-    user_dict = payload.model_dump(exclude_none=True, exclude=["role", "status"])
+    user_dict = payload.model_dump(exclude_unset=True, exclude=["role", "status"])
     for field, value in user_dict.items():
         setattr(user, field, value)
 
@@ -169,7 +169,7 @@ def update_user(
         ensure_not_last_active_admin(db, user_id)
 
     new_status = payload.status if user.status != payload.status else None
-    data = payload.model_dump(exclude_none=True)
+    data = payload.model_dump(exclude_unset=True)
 
     for filed, value in data.items():
         setattr(user, filed, value)
