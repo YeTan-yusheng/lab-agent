@@ -6,6 +6,7 @@
           <span>实验室列表</span>
         </div>
       </template>
+      <!-- 查询 -->
       <div style="margin-bottom: 10px">
         <el-input
           placeholder="请输入名称查询"
@@ -15,9 +16,20 @@
           @keyup.enter="handleSearch"
           @clear="handleSearch"
         ></el-input>
+        <el-select
+          placeholder="请选择状态"
+          v-model="params.status"
+          style="width: 120px; margin-right: 8px"
+          clearable
+          @change="handleSearch"
+          @clear="handleSearch"
+        >
+          <el-option :value="0" label="关闭" />
+          <el-option :value="1" label="开放" />
+        </el-select>
         <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
       </div>
-
+      <!-- 列表区 -->
       <div>
         <el-row :gutter="16" v-loading="loading">
           <el-col v-for="item in tableData" :key="item.id" :span="6" style="margin-bottom: 16px">
@@ -78,7 +90,7 @@
         </div>
       </div>
     </el-card>
-
+    <!-- 弹窗  -->
     <reserve-dialog
       v-model:visible="reserveVisible"
       :lab-id="currentLab?.id"
@@ -101,9 +113,9 @@ const reserveVisible = ref(false)
 const currentLab = ref(null)
 const params = reactive({
   page: 1,
-  page_size: 10,
+  page_size: 8,
   keywords: '',
-  status: 1
+  status: null
 })
 const loading = ref(false)
 const tableData = ref([])

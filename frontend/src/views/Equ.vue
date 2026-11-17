@@ -18,13 +18,42 @@
         <el-select
           placeholder="请选择实验室"
           v-model="params.lab_id"
-          style="width: 200px; margin-right: 8px"
+          style="width: 260px; margin-right: 8px"
+          clearable
+          @change="handleSearch"
+        >
+          <template #label="{ label, value }">
+            <div class="lab-select-label">
+              <span>{{ label }}</span>
+              <el-tag
+                v-if="getLabOption(value)"
+                size="small"
+                style="margin-left: 28px"
+                :type="getLabOption(value).status === 1 ? 'success' : 'danger'"
+              >
+                {{ getLabOption(value).status === 1 ? '开放' : '关闭' }}
+              </el-tag>
+            </div>
+          </template>
+          <el-option v-for="item in labOptions" :key="item.id" :value="item.id" :label="item.name">
+            <div class="lab-option">
+              <span>{{ item.name }}</span>
+              <el-tag size="small" :type="item.status === 1 ? 'success' : 'danger'">
+                {{ item.status === 1 ? '开放' : '关闭' }}
+              </el-tag>
+            </div>
+          </el-option>
+        </el-select>
+        <el-select
+          placeholder="请选择状态"
+          v-model="params.status"
+          style="width: 120px; margin-right: 8px"
           clearable
           @change="handleSearch"
           @clear="handleSearch"
         >
-          <el-option v-for="item in labOptions" :key="item.id" :value="item.id" :label="item.name">
-          </el-option>
+          <el-option :value="0" label="维修" />
+          <el-option :value="1" label="正常" />
         </el-select>
         <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
         <el-button
@@ -85,12 +114,15 @@
             >
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty description="暂无数据" />
+        </template>
       </el-table>
 
       <div style="margin-top: 10px; display: flex; justify-content: flex-end">
         <el-pagination
           v-model:current-page="params.page"
-          v-model:page-size="params.pageSize"
+          v-model:page-size="params.page_size"
           :total="total"
           background
           layout="total, prev, pager, next"
@@ -106,23 +138,50 @@
         :model="form"
         label-width="100px"
         style="width: 100%; padding-right: 30px; padding-top: 16px"
-        v-loading="loading"
+        v-loading="detailLoading"
       >
         <el-form-item label="所属实验室" prop="lab_id">
           <el-select v-model="form.lab_id" placeholder="请选择实验室" style="width: 100%">
+            <template #label="{ label, value }">
+              <div class="lab-select-label">
+                <span>{{ label }}</span>
+                <el-tag
+                  v-if="getLabOption(value)"
+                  size="small"
+                  style="margin-left: 28px"
+                  :type="getLabOption(value).status === 1 ? 'success' : 'danger'"
+                >
+                  {{ getLabOption(value).status === 1 ? '开放' : '关闭' }}
+                </el-tag>
+              </div>
+            </template>
+
             <el-option
               v-for="item in labOptions"
               :key="item.id"
               :label="item.name"
               :value="item.id"
-            />
+            >
+              <div class="lab-option">
+                <span>{{ item.name }}</span>
+                <el-tag size="small" :type="item.status === 1 ? 'success' : 'danger'">
+                  {{ item.status === 1 ? '开放' : '关闭' }}
+                </el-tag>
+              </div>
+            </el-option>
           </el-select>
         </el-form-item>
         <el-form-item label="设备名称" prop="name">
-          <el-input v-model="form.name" placeholder="请输入设备名称" />
+          <el-input v-model="form.name" placeholder="请输入设备名称" maxlength="50" />
         </el-form-item>
         <el-form-item label="说明">
-          <el-input v-model="form.description" type="textarea" :rows="3" placeholder="请输入说明" />
+          <el-input
+            v-model="form.description"
+            type="textarea"
+            :rows="3"
+            placeholder="请输入说明"
+            maxlength="500"
+          />
         </el-form-item>
         <el-form-item label="图片">
           <el-upload
@@ -137,7 +196,7 @@
           </el-upload>
         </el-form-item>
         <el-form-item label="型号规格">
-          <el-input v-model="form.spec" placeholder="例如 RTX4090 24G" />
+          <el-input v-model="form.spec" placeholder="例如 RTX4090 24G" maxlength="100" />
         </el-form-item>
         <el-form-item label="数量" prop="quantity">
           <el-input-number v-model="form.quantity" :min="1" :max="999" />
@@ -169,6 +228,7 @@ import {
   createEquipmentApi,
   deleteEquipmentApi,
   getEquipmentPageList,
+  getEquipment,
   updateEquipmentApi
 } from '@/api/equipment'
 import { getLabPageList } from '@/api/lab'
@@ -183,9 +243,12 @@ const params = reactive({
   page: 1,
   page_size: 10,
   keywords: '',
-  lab_id: null
+  lab_id: null,
+  status: null
 })
 const loading = ref(false)
+const detailLoading = ref(false)
+const formLoading = ref(false)
 const tableData = ref([])
 const labOptions = ref([])
 const total = ref(0)
@@ -201,7 +264,6 @@ const form = reactive({
   quantity: 1,
   status: 1
 })
-const formLoading = ref(false)
 
 const rules = {
   lab_id: [{ required: true, message: '请选择实验室', trigger: 'change' }],
@@ -222,45 +284,98 @@ const resetForm = () => {
   })
 }
 
+const getLabOption = (id) => {
+  return labOptions.value.find((item) => item.id === id)
+}
+
 const handleCreate = () => {
   resetForm()
+  detailLoading.value = false
   dialogVisible.value = true
 }
 
-const handleEdit = (row) => {
+const handleEdit = async (row) => {
   resetForm()
-  Object.assign(form, {
-    id: row.id,
-    lab_id: row.lab_id,
-    name: row.name,
-    description: row.description,
-    img: row.img,
-    spec: row.spec,
-    quantity: row.quantity,
-    status: row.status
-  })
   dialogVisible.value = true
+  detailLoading.value = true
+
+  try {
+    const res = await getEquipment(row.id)
+    Object.assign(form, {
+      id: res.data.id,
+      lab_id: res.data.lab_id,
+      name: res.data.name,
+      description: res.data.description,
+      img: res.data.img,
+      spec: res.data.spec,
+      quantity: res.data.quantity,
+      status: res.data.status
+    })
+    dialogVisible.value = true
+  } catch (err) {
+    if (err.code === 404) {
+      dialogVisible.value = false
+      load()
+    }
+  } finally {
+    detailLoading.value = false
+  }
 }
 
 const handleDelete = (row) => {
-  ElMessageBox.confirm(`确认删除实验室设备 [${row.name}] ？`, '确认删除', { type: 'warning' }).then(
-    async () => {
-      const res = await deleteEquipmentApi(row.id)
-      if (res.code === 200) {
-        ElMessage.success('删除成功')
-        load()
+  ElMessageBox.confirm(`确认删除实验室设备 [${row.name}] ？`, '确认删除', { type: 'warning' })
+    .then(async () => {
+      try {
+        const res = await deleteEquipmentApi(row.id)
+        if (res.code === 200) {
+          ElMessage.success('删除成功')
+          load()
+        }
+      } catch (err) {
+        if (err.code === 404) {
+          load()
+        }
       }
-    }
-  )
+    })
+    .catch()
+}
+/**
+ * 检查是否是编辑模式，如果是将清空的字符串替换为null
+ * @param data 表单数据
+ */
+const buildEquipmentPayload = (data) => {
+  const payload = {
+    lab_id: data.lab_id,
+    name: data.name,
+    description: data.description,
+    img: data.img,
+    spec: data.spec,
+    quantity: data.quantity,
+    status: data.status
+  }
+
+  Object.keys(payload).forEach((key) => {
+    if (payload[key] === '') payload[key] = null
+  })
+  return payload
 }
 
-// 保存
+/**
+ * 提交保存
+ */
 const handleSave = async () => {
+  if (formLoading.value) return
+
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
+
   formLoading.value = true
   try {
-    const res = form.id ? await updateEquipmentApi(form.id, form) : await createEquipmentApi(form)
+    const payload = buildEquipmentPayload(form)
+
+    const res = form.id
+      ? await updateEquipmentApi(form.id, payload)
+      : await createEquipmentApi(payload)
     if (res.code === 200) {
       dialogVisible.value = false
       ElMessage.success('操作成功')
@@ -313,11 +428,30 @@ const handleFileUpload = async ({ file }) => {
     }
   } catch {}
 }
-
+/**
+ * 加载实验室列表，供设备管理页面中的实验室下拉框使用
+ */
 const loadLabs = async () => {
-  const res = await getLabPageList({ page: 1, page_size: 100 })
-  if (res.code === 200) {
-    labOptions.value = res.data?.list
+  const pageSize = 100
+  const labs = []
+  let page = 1
+
+  try {
+    while (true) {
+      const res = await getLabPageList({ page: page, page_size: pageSize })
+
+      if (res.code !== 200) break
+      const list = res.data?.list || []
+      labs.push(...list)
+
+      const total = res.data?.total || 0
+      if (labs.length >= total || list.length < pageSize) break
+
+      page += 1
+    }
+    labOptions.value = labs
+  } catch {
+    labOptions.value = []
   }
 }
 
@@ -352,5 +486,20 @@ onMounted(() => {
   width: 130px;
   height: 130px;
   text-align: center;
+}
+
+.lab-select-label,
+.lab-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.lab-select-label {
+  padding-right: 8px;
+}
+
+.lab-option {
+  padding-right: 12px;
 }
 </style>

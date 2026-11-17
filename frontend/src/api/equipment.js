@@ -9,6 +9,14 @@ export function getEquipmentPageList(params) {
   })
 }
 
+// 获取设备详情
+export function getEquipment(equipmentId) {
+  return request({
+    url: `/api/equipment/${equipmentId}`,
+    method: 'get'
+  })
+}
+
 // 新增实验设备
 export function createEquipmentApi(data) {
   return request({

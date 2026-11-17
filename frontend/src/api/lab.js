@@ -21,6 +21,13 @@ export function getLab(labId) {
   })
 }
 
+export function getLabClosedDays(labId) {
+  return request({
+    url: `/api/lab/${labId}/closed_days`,
+    method: 'get'
+  })
+}
+
 // 新增实验室
 export function createLabApi(data) {
   return request({
@@ -39,10 +46,26 @@ export function updateLabApi(labId, data) {
   })
 }
 
+// 更新实验室闭馆日
+export function updateLabClosedDayApi(labId, data) {
+  return request({
+    url: `/api/lab/${labId}/closed_day`,
+    method: 'put',
+    data
+  })
+}
 // 删除实验室
 export function deleteLabApi(labId) {
   return request({
     url: `/api/lab/${labId}`,
     method: 'delete'
+  })
+}
+
+export function deleteLabClosedDay(labId, date) {
+  return request({
+    url: `/api/lab/${labId}/closed_days`,
+    method: 'delete',
+    params: { date }
   })
 }
