@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete as sqdelete, func, or_, select
 
 from app.core.response import PageResponse
 from app.models.lab import Lab
@@ -197,13 +197,8 @@ def delete_lab(db: Session, lab_id: int):
     if has_reservation:
         raise BusinessException(code=409, message="实验室下存在预约，无法删除")
 
-    has_closed_days = (
-        db.execute(select(LabClosedDay).where(LabClosedDay.lab_id == lab_id))
-        .scalars()
-        .all()
-    )
-    for closed_day in has_closed_days:
-        db.delete(closed_day)
+    db.execute(sqdelete(LabClosedDay).where(LabClosedDay.lab_id == lab_id))
+    db.flush()
     db.delete(lab)
     db.commit()
 
