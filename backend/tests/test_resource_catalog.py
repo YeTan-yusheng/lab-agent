@@ -637,6 +637,114 @@ def test_closed_day_delete(client, users, lab_equipment):
     )
 
 
+# ---------- 列表近期闭馆日 ----------
+
+
+def test_lab_list_includes_limited_upcoming_closed_days(
+    client, db, users, lab_equipment
+):
+    lab, _ = lab_equipment
+    today = datetime.date.today()
+    closed_days = [
+        (today - datetime.timedelta(days=1), "过去"),
+        (today, "今天"),
+        (today + datetime.timedelta(days=1), "明天"),
+        (today + datetime.timedelta(days=2), "后天"),
+        (today + datetime.timedelta(days=3), "大后天"),
+    ]
+    for day, reason in closed_days:
+        db.add(LabClosedDay(lab_id=lab.id, date=day, reason=reason))
+    db.commit()
+
+    response = client.get("/api/lab/list", headers=_headers(client, "student"))
+
+    assert response.status_code == 200
+    item = next(
+        row for row in response.json()["data"]["list"] if row["id"] == lab.id
+    )
+    upcoming = item["upcoming_closed_days"]
+    assert [day["date"] for day in upcoming] == [
+        today.isoformat(),
+        (today + datetime.timedelta(days=1)).isoformat(),
+        (today + datetime.timedelta(days=2)).isoformat(),
+    ]
+    assert [day["reason"] for day in upcoming] == ["今天", "明天", "后天"]
+
+
+def test_lab_list_upcoming_closed_days_are_grouped_by_lab(
+    client, db, users, lab_equipment
+):
+    lab, _ = lab_equipment
+    other = Lab(name="第二实验室", capacity=1, status=1)
+    db.add(other)
+    db.flush()
+    today = datetime.date.today()
+    db.add_all(
+        [
+            LabClosedDay(lab_id=lab.id, date=today, reason="一号闭馆"),
+            LabClosedDay(
+                lab_id=other.id,
+                date=today + datetime.timedelta(days=1),
+                reason="二号闭馆",
+            ),
+        ]
+    )
+    db.commit()
+
+    response = client.get("/api/lab/list", headers=_headers(client, "student"))
+
+    assert response.status_code == 200
+    items = {row["id"]: row for row in response.json()["data"]["list"]}
+    assert items[lab.id]["upcoming_closed_days"] == [
+        {"date": today.isoformat(), "reason": "一号闭馆"}
+    ]
+    assert items[other.id]["upcoming_closed_days"] == [
+        {
+            "date": (today + datetime.timedelta(days=1)).isoformat(),
+            "reason": "二号闭馆",
+        }
+    ]
+
+
+def test_lab_list_without_closed_days_returns_empty_upcoming(
+    client, users, lab_equipment
+):
+    lab, _ = lab_equipment
+
+    response = client.get("/api/lab/list", headers=_headers(client, "student"))
+
+    assert response.status_code == 200
+    item = next(
+        row for row in response.json()["data"]["list"] if row["id"] == lab.id
+    )
+    assert item["upcoming_closed_days"] == []
+
+
+def test_lab_detail_keeps_full_closed_day_history(
+    client, db, users, lab_equipment
+):
+    lab, _ = lab_equipment
+    today = datetime.date.today()
+    past = today - datetime.timedelta(days=1)
+    future = today + datetime.timedelta(days=1)
+    db.add_all(
+        [
+            LabClosedDay(lab_id=lab.id, date=past, reason="过去"),
+            LabClosedDay(lab_id=lab.id, date=future, reason="未来"),
+        ]
+    )
+    db.commit()
+
+    response = client.get(f"/api/lab/{lab.id}", headers=_headers(client, "student"))
+
+    assert response.status_code == 200
+    closed_days = response.json()["data"]["closed_days"]
+    assert [day["date"] for day in closed_days] == [
+        past.isoformat(),
+        future.isoformat(),
+    ]
+
+
 # ---------- 权限 ----------
 
 

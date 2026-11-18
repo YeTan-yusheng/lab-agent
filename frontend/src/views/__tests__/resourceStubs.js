@@ -16,6 +16,10 @@ export const resourceStubs = {
       '<div class="column"><div v-for="row in getTableData()" :key="row.id || row.date"><slot :row="row">{{ row[prop] }}</slot></div></div>'
   },
   'el-pagination': { template: '<div />' },
+  'el-row': { template: '<div class="row"><slot /></div>' },
+  'el-col': { props: ['span'], template: '<div class="col"><slot /></div>' },
+  'el-tooltip': { template: '<span><slot /></span>' },
+  'el-image': { props: ['src'], template: '<img :src="src" />' },
   'el-dialog': {
     props: ['modelValue', 'title', 'width'],
     template:
