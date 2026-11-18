@@ -1,13 +1,15 @@
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy.orm import Session
 from sqlalchemy import delete as sqdelete, func, or_, select
 
 from app.core.response import PageResponse
 from app.models.lab import Lab
 from app.schemas.lab import (
+    LabClosedDayBrief,
     LabClosedDayRequest,
     LabClosedDayResponse,
     LabDetailResponse,
+    LabListItemResponse,
     LabResponse,
     LabCreateRequest,
     LabUpdateRequest,
@@ -16,6 +18,8 @@ from app.core.exceptions import BusinessException
 from app.models.equipment import Equipment
 from app.models.reservation import Reservation
 from app.models.lab_closed_day import LabClosedDay
+
+UPCOMING_CLOSED_DAYS_LIMIT = 3
 
 
 def get_labs_page_list(
@@ -41,13 +45,46 @@ def get_labs_page_list(
 
     total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar()
 
-    items = db.execute(
-        stmt.order_by(Lab.id.desc()).offset((page - 1) * page_size).limit(page_size)
-    ).scalars()
-
-    return PageResponse(
-        list=[LabResponse.model_validate(item) for item in items], total=total
+    items = (
+        db.execute(
+            stmt.order_by(Lab.id.desc()).offset((page - 1) * page_size).limit(page_size)
+        )
+        .scalars()
+        .all()
     )
+
+    lab_ids = [item.id for item in items]
+    today = datetime.now().date()
+    upcoming = {}
+    if lab_ids:
+        rows = (
+            db.execute(
+                select(LabClosedDay)
+                .where(
+                    LabClosedDay.lab_id.in_(lab_ids),
+                    LabClosedDay.date >= today,
+                )
+                .order_by(LabClosedDay.lab_id, LabClosedDay.date)
+            )
+            .scalars()
+            .all()
+        )
+        for row in rows:
+            bucket = upcoming.setdefault(row.lab_id, [])
+            if len(bucket) < UPCOMING_CLOSED_DAYS_LIMIT:
+                bucket.append(row)
+    result = []
+    for item in items:
+        result.append(
+            LabListItemResponse(
+                **LabResponse.model_validate(item).model_dump(),
+                upcoming_closed_days=[
+                    LabClosedDayBrief.model_validate(day)
+                    for day in upcoming.get(item.id, [])
+                ],
+            )
+        )
+    return PageResponse(list=result, total=total)
 
 
 def get_lab(db: Session, lab_id: int) -> LabDetailResponse:
@@ -58,7 +95,7 @@ def get_lab(db: Session, lab_id: int) -> LabDetailResponse:
         db.execute(
             select(LabClosedDay)
             .where(LabClosedDay.lab_id == lab_id)
-            .order_by(LabClosedDay.date.desc())
+            .order_by(LabClosedDay.date.asc())
         )
         .scalars()
         .all()
@@ -104,7 +141,7 @@ def create_lab(db: Session, payload: LabCreateRequest) -> LabResponse:
         existing = db.execute(
             select(Lab).where(Lab.name == payload.name)
         ).scalar_one_or_none()
-    except Exception as e:
+    except Exception:
         raise BusinessException(code=500, message="查询实验室时发生错误")
 
     if existing:
@@ -203,7 +240,7 @@ def delete_lab(db: Session, lab_id: int):
     db.commit()
 
 
-def delete_lab_closed_day(db: Session, lab_id: int, date: datetime.date):
+def delete_lab_closed_day(db: Session, lab_id: int, date: date):
     """实验室管理-删除实验室闭馆日期"""
     lab = db.execute(select(Lab).where(Lab.id == lab_id)).scalar_one_or_none()
     if not lab:

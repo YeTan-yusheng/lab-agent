@@ -68,7 +68,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="360">
+        <el-table-column v-if="can(Capability.MANAGE_RESOURCES)" label="操作" min-width="360">
           <template #default="{ row }">
             <el-button
               v-if="can(Capability.MANAGE_RESOURCES)"
@@ -298,7 +298,8 @@ const { can } = useUser()
 const params = reactive({
   page: 1,
   page_size: 10,
-  keywords: ''
+  keywords: '',
+  status: 1
 })
 const loading = ref(false)
 const tableData = ref([])

@@ -33,6 +33,17 @@ class LabDetailResponse(LabResponse):
     closed_days: list[LabClosedDayResponse] = Field(default_factory=list)
 
 
+class LabClosedDayBrief(BaseModel):
+    date: datetime.date
+    reason: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LabListItemResponse(LabResponse):
+    upcoming_closed_days: list[LabClosedDayBrief] = Field(default_factory=list)
+
+
 class LabCreateRequest(BaseModel):
     name: str = Field(..., max_length=50, description="实验室名称")
     location: str | None = Field(default=None, max_length=100, description="实验室位置")
