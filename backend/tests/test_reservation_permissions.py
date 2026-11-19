@@ -140,7 +140,7 @@ def _headers(client, username):
     return {"Authorization": f"Bearer {response.json()['data']['token']}"}
 
 
-def _booking_payload(lab, equipment=None):
+def _booking_payload(lab, equipment=None, **overrides):
     payload = {
         "lab_id": lab.id,
         "date": "2099-01-01",
@@ -149,6 +149,7 @@ def _booking_payload(lab, equipment=None):
     }
     if equipment is not None:
         payload["equipment_id"] = equipment.id
+    payload.update(overrides)
     return payload
 
 
@@ -188,7 +189,7 @@ def test_teacher_can_book_lab_and_equipment(client, users, lab_equipment):
     )
     equipment_response = client.post(
         "/api/reservation",
-        json=_booking_payload(lab, equipment),
+        json=_booking_payload(lab, equipment, start_time="12:00", end_time="13:00"),
         headers=headers,
     )
 
@@ -226,7 +227,7 @@ def test_teacher_admin_can_book_lab_and_equipment(client, users, lab_equipment):
     )
     equipment_response = client.post(
         "/api/reservation",
-        json=_booking_payload(lab, equipment),
+        json=_booking_payload(lab, equipment, start_time="12:00", end_time="13:00"),
         headers=headers,
     )
 
