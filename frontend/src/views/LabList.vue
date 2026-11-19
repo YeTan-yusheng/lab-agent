@@ -62,10 +62,7 @@
                   <div style="font-size: 16px; font-weight: bold; margin-top: 10px">
                     {{ item.name }}
                   </div>
-                  <el-tag
-                    v-if="item?.upcoming_closed_days?.some((day) => day.date === todayString())"
-                    >今日闭馆
-                  </el-tag>
+                  <el-tag v-if="isClosedToday(item.upcoming_closed_days || [])">今日闭馆 </el-tag>
                   <el-tag v-else :type="item.status === 1 ? 'success' : 'danger'">
                     {{ item.status === 1 ? '开放中' : '已关闭' }}
                   </el-tag>
@@ -119,10 +116,7 @@
               <div style="margin-top: 12px; display: flex; gap: 8px">
                 <el-button style="flex: 1" @click="handleViewEquipment(item)">查看设备</el-button>
                 <el-button
-                  :disabled="
-                    !item.status ||
-                    item?.upcoming_closed_days?.some((day) => day.date === todayString())
-                  "
+                  :disabled="!item.status || isClosedToday(item.upcoming_closed_days || [])"
                   style="flex: 1"
                   v-if="can(Capability.BOOK_LAB)"
                   type="primary"
@@ -164,7 +158,7 @@ import router from '@/router'
 import ReserveDialog from '@/components/ReserveDialog.vue'
 import Capability from '@/utils/permissions'
 import { useUser } from '@/utils/user'
-import { todayString } from '@/utils/todayTime'
+import { isClosedToday } from '@/utils/todayTime'
 
 const { can } = useUser()
 const reserveVisible = ref(false)

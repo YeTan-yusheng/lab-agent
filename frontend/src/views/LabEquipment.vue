@@ -9,18 +9,14 @@
           </div>
           <div>
             <div style="display: inline-block; margin-right: 8px">
-              <el-tag v-if="lab?.closed_days?.some((day) => day.date === todayString())"
-                >今日闭馆
-              </el-tag>
+              <el-tag v-if="isClosedToday(lab?.closed_days || [])">今日闭馆 </el-tag>
               <el-tag v-else :type="isLabOpen ? 'success' : 'danger'">
                 {{ lab?.name || '实验室' }} {{ isLabOpen ? '开放中' : '已关闭' }}
               </el-tag>
             </div>
             <el-button
               v-if="can(Capability.BOOK_LAB)"
-              :disabled="
-                !lab?.status || lab?.closed_days?.some((day) => day.date === todayString())
-              "
+              :disabled="!lab?.status || isClosedToday(lab?.closed_days || [])"
               type="primary"
               @click="handleReserveLab"
               >预约实验室
@@ -142,11 +138,7 @@
           <template #default="{ row }">
             <el-button
               v-if="can(Capability.BOOK_EQUIPMENT)"
-              :disabled="
-                !row?.status ||
-                !lab?.status ||
-                lab?.closed_days?.some((day) => day.date === todayString())
-              "
+              :disabled="!row?.status || !lab?.status || isClosedToday(lab?.closed_days || [])"
               type="primary"
               text
               bg
@@ -230,7 +222,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ReserveDialog from '@/components/ReserveDialog.vue'
 import Capability from '@/utils/permissions'
 import { useUser } from '@/utils/user'
-import { todayString, isPastDate } from '@/utils/todayTime'
+import { todayString, isPastDate, isClosedToday } from '@/utils/todayTime'
 
 const { can } = useUser()
 const reserveVisible = ref(false)
@@ -252,6 +244,7 @@ const params = reactive({
 const loading = ref(false)
 const tableData = ref([])
 const total = ref(0)
+const loadLab404 = ref(false)
 
 // 闭馆日过滤今日之后的展示
 const upcomingClosedDays = computed(() => {
@@ -261,9 +254,7 @@ const upcomingClosedDays = computed(() => {
 })
 
 const isLabOpen = computed(() => {
-  return (
-    lab.value?.status === 1 && !lab.value?.closed_days?.some((day) => day.date === todayString())
-  )
+  return lab.value?.status === 1 && !isClosedToday(lab.value?.closed_days || [])
 })
 const handleReserveLab = () => {
   currentEquipment.value = null
@@ -288,6 +279,7 @@ const loadLab = async () => {
     }
   } catch (err) {
     if (err.code === 404) {
+      loadLab404.value = true
       router.push('/manager/lablist')
     }
   }
@@ -332,6 +324,7 @@ watch(
       router.push('/manager/lablist')
       return
     }
+    if (loadLab404.value) return
     // 更新查询参数并重置分页
     params.lab_id = labId
     params.page = 1

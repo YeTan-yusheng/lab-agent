@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 
 from app.core.response import PageResponse
 from app.models.equipment import Equipment
@@ -28,7 +29,7 @@ def get_equipment_page_list(
     if page_size < 1 or page_size > 100:
         raise BusinessException(code=422, message="每页数量必须在1-100之间")
 
-    stmt = select(Equipment)
+    stmt = select(Equipment).options(selectinload(Equipment.lab))
     if lab_id is not None:
         stmt = stmt.where(Equipment.lab_id == lab_id)
     if keywords is not None and keywords.strip() != "":
@@ -66,24 +67,19 @@ def get_equipment(db: Session, equipment_id: int) -> EquipmentDetailResponse:
 
 def create_equipment(db: Session, payload: EquipmentCreateRequest) -> EquipmentResponse:
     """新增实验设备"""
-    # 判断实验室是否存在
     lab_existing = db.execute(
         select(Lab).where(Lab.id == payload.lab_id)
     ).scalar_one_or_none()
     if not lab_existing:
         raise BusinessException(code=404, message="实验室不存在")
-    # 判断设备是否存在
     if payload.name.strip() == "":
         raise BusinessException(code=422, message="设备名称不能为空")
     payload.name = payload.name.strip()
-    try:
-        existing = db.execute(
-            select(Equipment).where(
-                Equipment.name == payload.name, Equipment.lab_id == payload.lab_id
-            )
-        ).scalar_one_or_none()
-    except Exception as e:
-        raise BusinessException(code=500, message="查询设备时发生错误")
+    existing = db.execute(
+        select(Equipment).where(
+            Equipment.name == payload.name, Equipment.lab_id == payload.lab_id
+        )
+    ).scalar_one_or_none()
     if existing:
         raise BusinessException(code=409, message="实验设备已存在")
 

@@ -15,7 +15,7 @@
         <el-form-item label="头像">
           <el-upload
             class="avatar-uploader"
-            :http-request="handleFileUpload"
+            :http-request="(file) => handleFileUpload({ file }, form, 'avatar')"
             :show-file-list="false"
             accept="image/jpeg,image/png,image/gif,image/webp"
             :before-upload="beforeAvatarUpload"
@@ -50,12 +50,13 @@
 
 <script setup>
 import { getUserInfo, updateUserInfo } from '@/api/user'
-import { uploadFileApi } from '@/api/file'
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useUser } from '@/utils/user'
 import { ElMessage } from 'element-plus'
+import { useImageUpload } from '@/utils/image'
 
 const { userInfo, updateUser } = useUser()
+const { beforeAvatarUpload, handleFileUpload } = useImageUpload()
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -76,28 +77,6 @@ const rules = {
 }
 
 const roleLabel = computed(() => userInfo.value?.display_name || '用户')
-
-const beforeAvatarUpload = (file) => {
-  const imageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-  if (!imageTypes.includes(file.type)) {
-    ElMessage.error('只能上传图片')
-    return false
-  }
-  if (file.size / 1024 / 1024 > 2) {
-    ElMessage.error('上传图片大小不能超过2M')
-    return false
-  }
-  return true
-}
-
-const handleFileUpload = async ({ file }) => {
-  try {
-    const res = await uploadFileApi(file)
-    if (res.code === 200) {
-      form.avatar = res.data?.url
-    }
-  } catch {}
-}
 
 const loadUserInfo = async () => {
   loading.value = true

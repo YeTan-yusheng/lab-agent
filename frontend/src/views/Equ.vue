@@ -186,7 +186,7 @@
         <el-form-item label="图片">
           <el-upload
             class="avatar-uploader"
-            :http-request="handleFileUpload"
+            :http-request="(file) => handleFileUpload({ file }, form, 'img')"
             :show-file-list="false"
             accept="image/jpeg,image/png,image/gif,image/webp"
             :before-upload="beforeAvatarUpload"
@@ -237,8 +237,10 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUser } from '@/utils/user'
 import { Capability } from '@/utils/permissions'
+import { useImageUpload } from '@/utils/image'
 
 const { can } = useUser()
+const { beforeAvatarUpload, handleFileUpload } = useImageUpload()
 const params = reactive({
   page: 1,
   page_size: 10,
@@ -407,27 +409,6 @@ const handleSearch = async () => {
   load()
 }
 
-const beforeAvatarUpload = (file) => {
-  const imageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-  if (!imageTypes.includes(file.type)) {
-    ElMessage.error('只能上传图片')
-    return false
-  }
-  if (file.size / 1024 / 1024 > 2) {
-    ElMessage.error('上传图片大小不能超过2M')
-    return false
-  }
-  return true
-}
-
-const handleFileUpload = async ({ file }) => {
-  try {
-    const res = await uploadFileApi(file)
-    if (res.code === 200) {
-      form.img = res.data?.url
-    }
-  } catch {}
-}
 /**
  * 加载实验室列表，供设备管理页面中的实验室下拉框使用
  */

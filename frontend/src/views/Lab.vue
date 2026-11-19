@@ -70,30 +70,11 @@
         </el-table-column>
         <el-table-column v-if="can(Capability.MANAGE_RESOURCES)" label="操作" min-width="360">
           <template #default="{ row }">
-            <el-button
-              v-if="can(Capability.MANAGE_RESOURCES)"
-              type="primary"
-              text
-              bg
-              @click="handleClosedDayManage(row)"
-              >新增/更新闭馆日</el-button
-            >
-            <el-button
-              v-if="can(Capability.MANAGE_RESOURCES)"
-              type="primary"
-              text
-              bg
-              @click="handleEdit(row)"
-              >编辑</el-button
-            >
-            <el-button
-              v-if="can(Capability.MANAGE_RESOURCES)"
-              type="danger"
-              text
-              bg
-              @click="handleDelete(row)"
-              >删除</el-button
-            >
+            <el-button type="primary" text bg @click="handleClosedDayManage(row)">
+              新增/更新闭馆日
+            </el-button>
+            <el-button type="primary" text bg @click="handleEdit(row)">编辑</el-button>
+            <el-button type="danger" text bg @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
         <template #empty>
@@ -123,7 +104,7 @@
       >
         <el-form-item label="封面">
           <el-upload
-            :http-request="handleFileUpload"
+            :http-request="(file) => handleFileUpload({ file }, form, 'img')"
             :show-file-list="false"
             accept="image/jpeg,image/png,image/gif,image/webp"
             :before-upload="beforeAvatarUpload"
@@ -197,104 +178,29 @@
       </template>
     </el-dialog>
 
-    <el-dialog
-      v-model="closedDayDialogVisible"
-      :title="closedDayLab ? `闭馆日 - ${closedDayLab.name}` : '闭馆日'"
-      width="640px"
-      @closed="resetClosedDayForm"
-    >
-      <div style="display: flex; gap: 8px; margin-bottom: 12px">
-        <el-date-picker
-          v-model="closedDayForm.date"
-          format="YYYY-MM-DD"
-          value-format="YYYY-MM-DD"
-          placeholder="选择闭馆日期"
-          style="width: 180px"
-          :disabled-date="isDateDisabled"
-          :disabled="closedDayEditing"
-        />
-        <el-input
-          v-model="closedDayForm.reason"
-          placeholder="闭馆原因（可选）"
-          maxlength="255"
-          show-word-limit
-          style="flex: 1"
-        />
-        <el-button
-          type="primary"
-          :loading="closedDaySaving"
-          :disabled="closedDaySaving"
-          @click="handleClosedDaySave"
-          >{{ closedDayEditing ? '保存修改' : '新增' }}</el-button
-        >
-        <el-button v-if="closedDayEditing" @click="resetClosedDayForm">取消编辑</el-button>
-      </div>
-      <el-table
-        :data="closedDays"
-        size="small"
-        v-loading="closedDayLoading"
-        :header-cell-style="{ backgroundColor: '#f5f7fa', color: '#333' }"
-      >
-        <el-table-column prop="date" label="日期" width="130" />
-        <el-table-column label="原因" min-width="200">
-          <template #default="{ row }">{{ row.reason || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="90">
-          <template #default="{ row }">
-            <el-tag v-if="isPastDate(row.date)" type="info">已过期</el-tag>
-            <el-tag v-else type="success">生效中</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="160">
-          <template #default="{ row }">
-            <el-button
-              text
-              bg
-              type="primary"
-              :disabled="isPastDate(row.date) || closedDaySaving"
-              @click="handleClosedDaySelect(row)"
-              >编辑</el-button
-            >
-            <el-button
-              text
-              bg
-              type="danger"
-              :disabled="isPastDate(row.date) || closedDaySaving"
-              @click="handleClosedDayDelete(row)"
-              >删除</el-button
-            >
-          </template>
-        </el-table-column>
-        <template #empty>
-          <el-empty description="暂无数据" />
-        </template>
-      </el-table>
-      <template #footer>
-        <el-button @click="closedDayDialogVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
+    <!-- 闭馆日 -->
+    <lab-closed-day-dialog
+      v-model:visible="closedDayDialogVisible"
+      :lab-id="closedDayLab?.id"
+      :lab-name="closedDayLab?.name"
+      @not-found="load"
+    />
   </div>
 </template>
 
 <script setup>
 import { Search, Plus } from '@element-plus/icons-vue'
-import {
-  createLabApi,
-  deleteLabApi,
-  getLabPageList,
-  updateLabApi,
-  getLabClosedDays,
-  deleteLabClosedDay,
-  updateLabClosedDayApi,
-  getLab
-} from '@/api/lab'
+import { createLabApi, deleteLabApi, getLabPageList, updateLabApi, getLab } from '@/api/lab'
 import { uploadFileApi } from '@/api/file'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUser } from '@/utils/user'
 import { Capability } from '@/utils/permissions'
+import LabClosedDayDialog from '@/components/LabClosedDayDialog.vue'
+import { useImageUpload } from '@/utils/image'
 
 const { can } = useUser()
+const { beforeAvatarUpload, handleFileUpload } = useImageUpload()
 const params = reactive({
   page: 1,
   page_size: 10,
@@ -318,26 +224,10 @@ const form = reactive({
   img: '',
   status: 1
 })
-const closedDayForm = reactive({
-  date: '',
-  reason: ''
-})
-const closedDays = ref([])
+
 const closedDayDialogVisible = ref(false)
 const closedDayLab = ref(null)
-const closedDayLoading = ref(false)
-const closedDaySaving = ref(false)
-const closedDayEditing = ref(false)
-const toDateString = (date) => {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
 
-const todayString = () => toDateString(new Date())
-const isPastDate = (value) => Boolean(value) && value < todayString()
-const isDateDisabled = (date) => toDateString(date) < todayString()
 const validateTimeRange = (_rule, _value, callback) => {
   if (!form.open_time || !form.close_time) {
     callback()
@@ -383,121 +273,14 @@ const resetForm = () => {
   })
 }
 
-const resetClosedDayForm = () => {
-  closedDayEditing.value = false
-  Object.assign(closedDayForm, {
-    date: '',
-    reason: ''
-  })
-}
-
-const beforeAvatarUpload = (file) => {
-  const imageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-  if (!imageTypes.includes(file.type)) {
-    ElMessage.error('只能上传图片')
-    return false
-  }
-  if (file.size / 1024 / 1024 > 2) {
-    ElMessage.error('上传图片大小不能超过2M')
-    return false
-  }
-  return true
-}
-
-const handleFileUpload = async ({ file }) => {
-  const res = await uploadFileApi(file)
-  if (res.code === 200) {
-    form.img = res.data?.url
-  }
-}
-
 const handleCreate = () => {
   resetForm()
   dialogVisible.value = true
 }
-
-const loadClosedDays = async (labId) => {
-  closedDayLoading.value = true
-  try {
-    const res = await getLabClosedDays(labId)
-    closedDays.value = res.data || []
-  } catch (err) {
-    if (err.code === 404) {
-      closedDayDialogVisible.value = false
-      load()
-    }
-  } finally {
-    closedDayLoading.value = false
-  }
-}
-
-const handleClosedDayManage = async (row) => {
+// 闭馆日管理
+const handleClosedDayManage = (row) => {
   closedDayLab.value = row
-  resetClosedDayForm()
-  closedDays.value = [] // 重置列表，解决打开弹窗短暂显示上一个实验室闭馆日的问题
   closedDayDialogVisible.value = true
-  await loadClosedDays(row.id)
-}
-
-const handleClosedDaySelect = (row) => {
-  closedDayEditing.value = true
-  Object.assign(closedDayForm, {
-    date: row.date,
-    reason: row.reason || ''
-  })
-}
-
-const handleClosedDaySave = async () => {
-  if (!closedDayLab.value || closedDaySaving.value) return
-  if (!closedDayForm.date) {
-    ElMessage.warning('请选择闭馆日期')
-    return
-  }
-  if (isPastDate(closedDayForm.date)) {
-    ElMessage.warning('闭馆日期必须在今天及以后')
-    return
-  }
-
-  closedDaySaving.value = true
-  try {
-    await updateLabClosedDayApi(closedDayLab.value.id, {
-      date: closedDayForm.date,
-      reason: closedDayForm.reason.trim() || null
-    })
-    ElMessage.success('保存成功')
-    resetClosedDayForm()
-    await loadClosedDays(closedDayLab.value.id)
-  } catch (err) {
-    if (err.code === 404) {
-      closedDayDialogVisible.value = false
-      load()
-    }
-  } finally {
-    closedDaySaving.value = false
-  }
-}
-
-const handleClosedDayDelete = (row) => {
-  if (!closedDayLab.value || closedDaySaving.value || isPastDate(row.date)) return
-  ElMessageBox.confirm(`确认删除 ${row.date} 的闭馆日？`, '确认删除', { type: 'warning' })
-    .then(async () => {
-      closedDaySaving.value = true
-      try {
-        await deleteLabClosedDay(closedDayLab.value.id, row.date)
-        ElMessage.success('删除成功')
-        if (closedDayEditing.value && closedDayForm.date === row.date) {
-          resetClosedDayForm()
-        }
-        await loadClosedDays(closedDayLab.value.id)
-      } catch (err) {
-        if (err.code === 404) {
-          await loadClosedDays(closedDayLab.value.id)
-        }
-      } finally {
-        closedDaySaving.value = false
-      }
-    })
-    .catch(() => {})
 }
 
 const handleEdit = async (row) => {

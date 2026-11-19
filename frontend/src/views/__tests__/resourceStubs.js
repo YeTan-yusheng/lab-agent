@@ -96,7 +96,3 @@ export function findButton(root, text) {
 export function findDialog(wrapper) {
   return wrapper.find('.dialog')
 }
-
-export function findDialogButton(wrapper, text) {
-  return findButton(findDialog(wrapper), text)
-}
