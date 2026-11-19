@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from datetime import datetime
 import asyncio
 
@@ -16,6 +16,15 @@ from app.core.permissions import (
     get_role_profile,
     booking_capability,
 )
+from app.core.reservation_rules import (
+    OCCUPYING_STATUSES,
+    conflict_scope,
+    evaluate_conflicts,
+    validate_equipment,
+    validate_lab,
+    validate_time,
+)
+from app.models.lab_closed_day import LabClosedDay
 
 
 def get_reservation_page_list(
@@ -99,52 +108,60 @@ def create_reservation(
         raise BusinessException(code=403, message="无权限预约该类型资源")
 
     now = datetime.now()
-    current_date = now.strftime("%Y-%m-%d")
-    current_time = now.strftime("%H:%M")
-    if payload.date < current_date:
-        raise BusinessException(message="预约日期不能小于当前的日期")
-    if payload.end_time < payload.start_time:
-        raise BusinessException(message="预约的结束时间不能小于开始时间")
-    if payload.date == current_date and payload.start_time < current_time:
-        raise BusinessException(message="预约开始时间不能小于当前的时间")
+    time_result = validate_time(payload.date, payload.start_time, payload.end_time, now)
+    if not time_result.allowed:
+        raise BusinessException(
+            code=time_result.http_status, message=time_result.message
+        )
 
     lab = db.execute(select(Lab).where(Lab.id == payload.lab_id)).scalar_one_or_none()
-    if not lab:
-        raise BusinessException(code=404, message="实验室不存在")
-    if lab.status != 1:
-        raise BusinessException(message="实验室已关闭")
-    if lab.open_time and payload.start_time < lab.open_time:
-        raise BusinessException(message="预约时间不能早于实验室的开放时间")
-    if lab.close_time and payload.end_time > lab.close_time:
-        raise BusinessException(message="预约时间不能晚于实验室的关闭时间")
+    closed_days = (
+        db.execute(
+            select(LabClosedDay.date).where(LabClosedDay.lab_id == payload.lab_id)
+        )
+        .scalars()
+        .all()
+    )
+    lab_result = validate_lab(
+        lab, payload.date, payload.start_time, payload.end_time, closed_days
+    )
+    if not lab_result.allowed:
+        raise BusinessException(code=lab_result.http_status, message=lab_result.message)
 
     # equipment_id 不为空 则表示这次是预约的实验室设备
     if payload.equipment_id is not None:
         equipment = db.execute(
             select(Equipment).where(Equipment.id == payload.equipment_id)
         ).scalar_one_or_none()
-        if not equipment:
-            raise BusinessException(code=404, message="实验室设备不存在")
-        if equipment.status != 1:
-            raise BusinessException(message="实验室设备正在维修")
+        equipment_result = validate_equipment(equipment, payload.lab_id)
+        if not equipment_result.allowed:
+            raise BusinessException(
+                code=equipment_result.http_status, message=equipment_result.message
+            )
 
-    # 实验室或者设备是否是可预约的状态
-    stmt = select(Reservation).where(
+    scope = conflict_scope(payload.equipment_id)
+    conflict_stmt = select(Reservation.equipment_id).where(
         Reservation.lab_id == payload.lab_id,
         Reservation.date == payload.date,
-        Reservation.status.in_([0, 1]),  # 0表示待审核  1已通过
+        Reservation.status.in_(OCCUPYING_STATUSES),
         Reservation.start_time < payload.end_time,
         Reservation.end_time > payload.start_time,
     )
-    if payload.equipment_id:
-        stmt = stmt.where(
-            Reservation.equipment_id == payload.equipment_id
-        )  # 预约实验室设备
-    else:
-        stmt = stmt.where(Reservation.equipment_id.is_(None))  # 只预约实验室
-    res = db.execute(stmt).scalar_one_or_none()
-    if res:
-        raise BusinessException(code=409, message="该时段已预约")
+
+    if not scope.any_reservation:
+        conflict_stmt = conflict_stmt.where(
+            or_(
+                Reservation.equipment_id.is_(None),
+                Reservation.equipment_id == scope.equipment_id,
+            )
+        )
+    existing_equipment_ids = db.execute(conflict_stmt).scalars().all()
+
+    conflict_result = evaluate_conflicts(existing_equipment_ids, payload.equipment_id)
+    if not conflict_result.allowed:
+        raise BusinessException(
+            code=conflict_result.http_status, message=conflict_result.message
+        )
 
     resvervation_model = Reservation(
         user_id=current_user.id,

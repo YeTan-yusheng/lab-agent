@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict
+from datetime import datetime
+from typing import Self
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ReservationCreateRequest(BaseModel):
@@ -7,7 +9,29 @@ class ReservationCreateRequest(BaseModel):
     date: str
     start_time: str
     end_time: str
-    remark: str | None = None
+    remark: str | None = Field(default=None, max_length=255, description="预约备注")
+
+    @field_validator("date")
+    @classmethod
+    def _check_date(cls, v: str) -> str:
+        try:
+            return datetime.strptime(v, "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            raise ValueError("日期格式必须为 YYYY-MM-DD")
+
+    @field_validator("start_time", "end_time")
+    @classmethod
+    def _check_time(cls, v: str) -> str:
+        try:
+            return datetime.strptime(v, "%H:%M").time().strftime("%H:%M")
+        except ValueError:
+            raise ValueError("时间格式必须为 HH:MM")
+
+    @model_validator(mode="after")
+    def _check_order(self) -> Self:
+        if self.start_time >= self.end_time:
+            raise ValueError("结束时间必须晚于开始时间")
+        return self
 
 
 class ReservationResponse(BaseModel):
