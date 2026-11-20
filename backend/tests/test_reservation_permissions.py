@@ -178,6 +178,75 @@ def test_student_cannot_book_lab(client, users, lab_equipment):
     assert response.status_code == 403
 
 
+def test_student_can_query_equipment_availability(client, users, lab_equipment):
+    lab, equipment = lab_equipment
+
+    response = client.post(
+        "/api/reservation/availability",
+        json=_booking_payload(lab, equipment),
+        headers=_headers(client, "res_student"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["available"] is True
+
+
+def test_student_cannot_query_lab_availability(client, users, lab_equipment):
+    lab, _ = lab_equipment
+
+    response = client.post(
+        "/api/reservation/availability",
+        json=_booking_payload(lab),
+        headers=_headers(client, "res_student"),
+    )
+
+    assert response.status_code == 403
+
+
+def test_teacher_can_query_lab_availability(client, users, lab_equipment):
+    lab, _ = lab_equipment
+
+    response = client.post(
+        "/api/reservation/availability",
+        json=_booking_payload(lab),
+        headers=_headers(client, "res_teacher"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["available"] is True
+
+
+def test_pure_admin_cannot_query_availability(client, users, lab_equipment):
+    lab, equipment = lab_equipment
+
+    response = client.post(
+        "/api/reservation/availability",
+        json=_booking_payload(lab, equipment),
+        headers=_headers(client, "res_admin"),
+    )
+
+    assert response.status_code == 403
+
+
+def test_availability_reports_existing_lab_conflict(client, users, lab_equipment):
+    lab, _ = lab_equipment
+    headers = _headers(client, "res_teacher")
+    payload = _booking_payload(lab)
+
+    assert client.post("/api/reservation", json=payload, headers=headers).status_code == 200
+    response = client.post(
+        "/api/reservation/availability",
+        json=payload,
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["available"] is False
+    assert data["reason_code"] == "LAB_TIME_CONFLICT"
+    assert data["conflicts"][0]["type"] == "lab"
+
+
 def test_teacher_can_book_lab_and_equipment(client, users, lab_equipment):
     lab, equipment = lab_equipment
     headers = _headers(client, "res_teacher")

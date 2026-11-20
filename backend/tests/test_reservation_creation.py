@@ -13,7 +13,7 @@ from app.models.lab import Lab
 from app.models.lab_closed_day import LabClosedDay
 from app.models.reservation import Reservation
 from app.models.user import User, UserRoles
-from app.schemas.reservation import ReservationCreateRequest
+from app.schemas.reservation import AvailabilityRequest, ReservationCreateRequest
 from app.services import reservation_service
 
 PASSWORD_HASH = hash_password("123456")
@@ -83,6 +83,19 @@ def _payload(lab, equipment=None, **overrides):
         data["equipment_id"] = equipment.id
     data.update(overrides)
     return ReservationCreateRequest(**data)
+
+
+def _availability(lab, equipment=None, **overrides):
+    data = {
+        "lab_id": lab.id,
+        "date": "2099-01-01",
+        "start_time": "10:00",
+        "end_time": "11:00",
+    }
+    if equipment is not None:
+        data["equipment_id"] = equipment.id
+    data.update(overrides)
+    return AvailabilityRequest(**data)
 
 
 def _create(db, user, payload):
@@ -193,3 +206,74 @@ def test_adjacent_time_slots_are_allowed(db, teacher, lab_equipment):
     _create(db, teacher, _payload(lab, start_time="11:00", end_time="12:00"))
 
     assert _reservation_count(db) == 2
+
+
+def test_availability_returns_available_for_free_slot(db, teacher, lab_equipment):
+    lab, equipment_1, _ = lab_equipment
+
+    result = reservation_service.check_availability(
+        db, _availability(lab, equipment_1)
+    )
+
+    assert result.available is True
+    assert result.reason_code == "OK"
+    assert result.conflicts == []
+
+
+def test_availability_reports_lab_conflict(db, teacher, lab_equipment):
+    lab, _, _ = lab_equipment
+    _create(db, teacher, _payload(lab))
+
+    result = reservation_service.check_availability(db, _availability(lab))
+
+    assert result.available is False
+    assert result.reason_code == "LAB_TIME_CONFLICT"
+    assert len(result.conflicts) == 1
+    assert result.conflicts[0].type == "lab"
+
+
+def test_availability_reports_equipment_conflict(db, teacher, lab_equipment):
+    lab, equipment_1, _ = lab_equipment
+    _create(db, teacher, _payload(lab, equipment_1))
+
+    result = reservation_service.check_availability(
+        db, _availability(lab, equipment_1)
+    )
+
+    assert result.available is False
+    assert result.reason_code == "EQUIPMENT_TIME_CONFLICT"
+    assert len(result.conflicts) == 1
+    assert result.conflicts[0].type == "equipment"
+
+
+def test_availability_allows_different_equipment_in_same_lab(
+    db, teacher, lab_equipment
+):
+    lab, equipment_1, equipment_2 = lab_equipment
+    _create(db, teacher, _payload(lab, equipment_1))
+
+    result = reservation_service.check_availability(
+        db, _availability(lab, equipment_2)
+    )
+
+    assert result.available is True
+
+
+def test_availability_rejects_closed_day(db, teacher, lab_equipment):
+    lab, _, _ = lab_equipment
+    db.add(LabClosedDay(lab_id=lab.id, date=date(2099, 1, 1), reason="维护"))
+    db.commit()
+
+    result = reservation_service.check_availability(db, _availability(lab))
+
+    assert result.available is False
+    assert result.reason_code == "LAB_CLOSED_DAY"
+
+
+def test_availability_does_not_write_reservations(db, teacher, lab_equipment):
+    lab, equipment_1, _ = lab_equipment
+    before = _reservation_count(db)
+
+    reservation_service.check_availability(db, _availability(lab, equipment_1))
+
+    assert _reservation_count(db) == before
