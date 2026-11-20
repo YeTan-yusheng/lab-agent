@@ -1,3 +1,4 @@
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, select
 from datetime import datetime
@@ -7,10 +8,16 @@ from app.models.user import User
 from app.models.lab import Lab
 from app.models.equipment import Equipment
 from app.models.reservation import Reservation
-from app.schemas.reservation import ReservationCreateRequest, ReservationResponse
 from app.core.exceptions import BusinessException
 from app.core.response import PageResponse
 from app.core.database import SessionLocal
+from app.schemas.reservation import (
+    ReservationCreateRequest,
+    ReservationResponse,
+    AvailabilityRequest,
+    AvailabilityResponse,
+    ConflictInfo,
+)
 from app.core.permissions import (
     Capability,
     get_role_profile,
@@ -18,6 +25,7 @@ from app.core.permissions import (
 )
 from app.core.reservation_rules import (
     OCCUPYING_STATUSES,
+    RuleResult,
     conflict_scope,
     evaluate_conflicts,
     validate_equipment,
@@ -107,40 +115,46 @@ def create_reservation(
     if not role_profile.has(required):
         raise BusinessException(code=403, message="无权限预约该类型资源")
 
-    now = datetime.now()
-    time_result = validate_time(payload.date, payload.start_time, payload.end_time, now)
-    if not time_result.allowed:
-        raise BusinessException(
-            code=time_result.http_status, message=time_result.message
-        )
-
-    lab = db.execute(select(Lab).where(Lab.id == payload.lab_id)).scalar_one_or_none()
-    closed_days = (
-        db.execute(
-            select(LabClosedDay.date).where(LabClosedDay.lab_id == payload.lab_id)
-        )
-        .scalars()
-        .all()
-    )
-    lab_result = validate_lab(
-        lab, payload.date, payload.start_time, payload.end_time, closed_days
-    )
-    if not lab_result.allowed:
-        raise BusinessException(code=lab_result.http_status, message=lab_result.message)
-
-    # equipment_id 不为空 则表示这次是预约的实验室设备
-    if payload.equipment_id is not None:
-        equipment = db.execute(
-            select(Equipment).where(Equipment.id == payload.equipment_id)
+    try:
+        lab = db.execute(
+            select(Lab).where(Lab.id == payload.lab_id).with_for_update()
         ).scalar_one_or_none()
-        equipment_result = validate_equipment(equipment, payload.lab_id)
-        if not equipment_result.allowed:
+        if lab is None:
+            raise BusinessException(code=404, message="实验室不存在")
+
+        check_result = check_availability(db, payload)
+        if not check_result.available:
             raise BusinessException(
-                code=equipment_result.http_status, message=equipment_result.message
+                code=check_result.http_status, message=check_result.message
             )
 
+        resvervation_model = Reservation(
+            user_id=current_user.id,
+            lab_id=payload.lab_id,
+            equipment_id=payload.equipment_id,
+            date=payload.date,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+            remark=payload.remark,
+            status=0,
+        )
+        db.add(resvervation_model)
+        db.commit()
+    except BusinessException:
+        db.rollback()
+        raise
+    except IntegrityError:
+        db.rollback()
+        raise BusinessException(code=409, message="预约冲突")
+    except Exception:
+        db.rollback()
+        raise BusinessException(message="创建预约失败")
+
+
+def find_conflicts(db: Session, payload: AvailabilityRequest) -> AvailabilityResponse:
+    """查找预约是否冲突"""
     scope = conflict_scope(payload.equipment_id)
-    conflict_stmt = select(Reservation.equipment_id).where(
+    conflict_stmt = select(Reservation).where(
         Reservation.lab_id == payload.lab_id,
         Reservation.date == payload.date,
         Reservation.status.in_(OCCUPYING_STATUSES),
@@ -155,26 +169,81 @@ def create_reservation(
                 Reservation.equipment_id == scope.equipment_id,
             )
         )
-    existing_equipment_ids = db.execute(conflict_stmt).scalars().all()
+    conflict_reservations = db.execute(conflict_stmt).scalars().all()
+    existing_equ_ids = [item.equipment_id for item in conflict_reservations]
 
-    conflict_result = evaluate_conflicts(existing_equipment_ids, payload.equipment_id)
-    if not conflict_result.allowed:
-        raise BusinessException(
-            code=conflict_result.http_status, message=conflict_result.message
+    result = evaluate_conflicts(existing_equ_ids, payload.equipment_id)
+    if not result.allowed:
+        return AvailabilityResponse(
+            available=False,
+            reason_code=result.reason_code,
+            message=result.message,
+            conflicts=[
+                ConflictInfo(
+                    reservation_id=conflict_reservation.id,
+                    type=(
+                        ("lab")
+                        if conflict_reservation.equipment_id is None
+                        else "equipment"
+                    ),
+                    start_time=conflict_reservation.start_time,
+                    end_time=conflict_reservation.end_time,
+                )
+                for conflict_reservation in conflict_reservations
+            ],
+            http_status=409,
         )
-
-    resvervation_model = Reservation(
-        user_id=current_user.id,
-        lab_id=payload.lab_id,
-        equipment_id=payload.equipment_id,
-        date=payload.date,
-        start_time=payload.start_time,
-        end_time=payload.end_time,
-        remark=payload.remark,
-        status=0,
+    return AvailabilityResponse(
+        available=True, reason_code="OK", message="预约时间可用"
     )
-    db.add(resvervation_model)
-    db.commit()
+
+
+def check_availability(
+    db: Session, payload: AvailabilityRequest
+) -> AvailabilityResponse:
+    now = datetime.now()
+    time_result = validate_time(payload.date, payload.start_time, payload.end_time, now)
+    if not time_result.allowed:
+        return _to_availability(time_result)
+
+    lab = db.execute(select(Lab).where(Lab.id == payload.lab_id)).scalar_one_or_none()
+    closed_days = (
+        db.execute(
+            select(LabClosedDay.date).where(LabClosedDay.lab_id == payload.lab_id)
+        )
+        .scalars()
+        .all()
+    )
+    lab_result = validate_lab(
+        lab, payload.date, payload.start_time, payload.end_time, closed_days
+    )
+    if not lab_result.allowed:
+        return _to_availability(lab_result)
+
+    if payload.equipment_id is not None:
+        equipment = db.execute(
+            select(Equipment).where(Equipment.id == payload.equipment_id)
+        ).scalar_one_or_none()
+        equipment_result = validate_equipment(equipment, payload.lab_id)
+        if not equipment_result.allowed:
+            return _to_availability(equipment_result)
+
+    conflict_result = find_conflicts(db, payload)
+    if not conflict_result.available:
+        return conflict_result
+
+    return AvailabilityResponse(
+        available=True, reason_code="OK", message="预约时间可用"
+    )
+
+
+def _to_availability(result: RuleResult) -> AvailabilityResponse:
+    return AvailabilityResponse(
+        available=result.allowed,
+        reason_code=result.reason_code,
+        message=result.message,
+        http_status=result.http_status,
+    )
 
 
 # 过期自动释放未审核预约

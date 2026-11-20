@@ -2,7 +2,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 
-from app.schemas.reservation import ReservationCreateRequest, AuditReservationRequest
+from app.schemas.reservation import (
+    ReservationCreateRequest,
+    AuditReservationRequest,
+    AvailabilityRequest,
+)
 from app.models.user import User
 from app.dependencies.auth import (
     get_current_user,
@@ -41,10 +45,20 @@ def create_reservation(
     return Response.success()
 
 
+@router.post("/availability")
+def check_availability(
+    payload: AvailabilityRequest,
+    current_user: User = Depends(require_booking_capability),
+    db: Session = Depends(get_db),
+):
+    res = reservation_service.check_availability(db, payload)
+    return Response.success(data=res)
+
+
 @router.put("/{reservation_id}/cancel")
 def cancel_reservation(
     reservation_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_booking_capability),
     db: Session = Depends(get_db),
 ):
     reservation_service.cancel_reservation(db, reservation_id, current_user)
