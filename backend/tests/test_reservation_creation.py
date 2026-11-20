@@ -277,3 +277,29 @@ def test_availability_does_not_write_reservations(db, teacher, lab_equipment):
     reservation_service.check_availability(db, _availability(lab, equipment_1))
 
     assert _reservation_count(db) == before
+
+
+def test_other_lab_booking_does_not_block_availability(
+    db, teacher, lab_equipment
+):
+    lab, _, _ = lab_equipment
+    other_lab = Lab(name="跨实验室验证", capacity=5, status=1)
+    db.add(other_lab)
+    db.flush()
+    other_equipment = Equipment(
+        lab_id=other_lab.id, name="跨实验室设备", quantity=1, status=1
+    )
+    db.add(other_equipment)
+    db.commit()
+    db.refresh(other_lab)
+    db.refresh(other_equipment)
+
+    # 实验室 A 已被占用，但实验室 B 的同一时段仍应可用且可创建
+    _create(db, teacher, _payload(lab))
+    result = reservation_service.check_availability(
+        db, _availability(other_lab, other_equipment)
+    )
+    assert result.available is True
+
+    _create(db, teacher, _payload(other_lab, other_equipment))
+    assert _reservation_count(db) == 2

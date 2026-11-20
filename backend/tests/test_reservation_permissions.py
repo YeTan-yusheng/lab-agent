@@ -246,6 +246,30 @@ def test_availability_reports_existing_lab_conflict(client, users, lab_equipment
     assert data["reason_code"] == "LAB_TIME_CONFLICT"
     assert data["conflicts"][0]["type"] == "lab"
 
+    conflict_response = client.post(
+        "/api/reservation",
+        json=payload,
+        headers=headers,
+    )
+    assert conflict_response.status_code == 409
+
+
+def test_availability_and_create_agree_on_free_slot(client, users, lab_equipment):
+    lab, equipment = lab_equipment
+    headers = _headers(client, "res_teacher")
+    payload = _booking_payload(lab, equipment)
+
+    availability = client.post(
+        "/api/reservation/availability",
+        json=payload,
+        headers=headers,
+    )
+    assert availability.status_code == 200
+    assert availability.json()["data"]["available"] is True
+
+    created = client.post("/api/reservation", json=payload, headers=headers)
+    assert created.status_code == 200
+
 
 def test_teacher_can_book_lab_and_equipment(client, users, lab_equipment):
     lab, equipment = lab_equipment
