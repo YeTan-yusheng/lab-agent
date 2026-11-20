@@ -122,7 +122,7 @@ def create_reservation(
         if lab is None:
             raise BusinessException(code=404, message="实验室不存在")
 
-        check_result = check_availability(db, payload)
+        check_result = check_availability(db, payload, lock_conflicts=True)
         if not check_result.available:
             raise BusinessException(
                 code=check_result.http_status, message=check_result.message
@@ -151,7 +151,9 @@ def create_reservation(
         raise BusinessException(message="创建预约失败")
 
 
-def find_conflicts(db: Session, payload: AvailabilityRequest) -> AvailabilityResponse:
+def find_conflicts(
+    db: Session, payload: AvailabilityRequest, *, lock: bool = False
+) -> AvailabilityResponse:
     """查找预约是否冲突"""
     scope = conflict_scope(payload.equipment_id)
     conflict_stmt = select(Reservation).where(
@@ -169,6 +171,8 @@ def find_conflicts(db: Session, payload: AvailabilityRequest) -> AvailabilityRes
                 Reservation.equipment_id == scope.equipment_id,
             )
         )
+    if lock:
+        conflict_stmt = conflict_stmt.with_for_update()
     conflict_reservations = db.execute(conflict_stmt).scalars().all()
     existing_equ_ids = [item.equipment_id for item in conflict_reservations]
 
@@ -199,7 +203,10 @@ def find_conflicts(db: Session, payload: AvailabilityRequest) -> AvailabilityRes
 
 
 def check_availability(
-    db: Session, payload: AvailabilityRequest
+    db: Session,
+    payload: AvailabilityRequest,
+    *,
+    lock_conflicts: bool = False,
 ) -> AvailabilityResponse:
     now = datetime.now()
     time_result = validate_time(payload.date, payload.start_time, payload.end_time, now)
@@ -228,7 +235,7 @@ def check_availability(
         if not equipment_result.allowed:
             return _to_availability(equipment_result)
 
-    conflict_result = find_conflicts(db, payload)
+    conflict_result = find_conflicts(db, payload, lock=lock_conflicts)
     if not conflict_result.available:
         return conflict_result
 
