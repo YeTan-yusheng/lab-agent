@@ -9,6 +9,24 @@ export function createReservationApi(data) {
   })
 }
 
+// 查看预约可用性
+export function checkAvailabilityApi(data) {
+  return request({
+    url: '/api/reservation/availability',
+    method: 'post',
+    data
+  })
+}
+
+// 查看某天可预约区间
+export function getDayAvailabilityApi(data) {
+  return request({
+    url: '/api/reservation/availability/day',
+    method: 'post',
+    data
+  })
+}
+
 // 预约查看列表
 export function getReservationPageList(params) {
   return request({

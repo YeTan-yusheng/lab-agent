@@ -191,7 +191,6 @@
 <script setup>
 import { Search, Plus } from '@element-plus/icons-vue'
 import { createLabApi, deleteLabApi, getLabPageList, updateLabApi, getLab } from '@/api/lab'
-import { uploadFileApi } from '@/api/file'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUser } from '@/utils/user'

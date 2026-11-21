@@ -71,3 +71,31 @@ class AvailabilityResponse(BaseModel):
     message: str | None = None
     conflicts: list[ConflictInfo] = Field(default_factory=list)
     http_status: int = 200
+
+
+class DayAvailabilityRequest(BaseModel):
+    lab_id: int
+    equipment_id: int | None = None
+    date: str
+
+    @field_validator("date")
+    @classmethod
+    def _check_date(cls, v: str) -> str:
+        try:
+            return datetime.strptime(v, "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            raise ValueError("日期格式必须为 YYYY-MM-DD")
+
+
+class TimeRange(BaseModel):
+    start: str
+    end: str
+
+
+class DayAvailabilityResponse(BaseModel):
+    date: str
+    open_time: str
+    close_time: str
+    current_time: str | None = None
+    message: str | None = None
+    ranges: list[TimeRange] = Field(default_factory=list)

@@ -17,6 +17,9 @@ from app.schemas.reservation import (
     AvailabilityRequest,
     AvailabilityResponse,
     ConflictInfo,
+    DayAvailabilityRequest,
+    DayAvailabilityResponse,
+    TimeRange,
 )
 from app.core.permissions import (
     Capability,
@@ -33,6 +36,24 @@ from app.core.reservation_rules import (
     validate_time,
 )
 from app.models.lab_closed_day import LabClosedDay
+
+TIME_INTERVAL = 10  # 预约时间间隔，单位分钟
+
+
+def _time_to_minutes(value: str | None, default: int) -> int:
+    """将时间字符串转换为分钟数"""
+    if not value:
+        return default
+    try:
+        hours, minutes = (int(part) for part in value.split(":"))
+        return hours * 60 + minutes
+    except (TypeError, ValueError):
+        return default
+
+
+def _minutes_to_time(value: int) -> str:
+    """将分钟数转换为时间字符串"""
+    return f"{value // 60:02d}:{value % 60:02d}"
 
 
 def get_reservation_page_list(
@@ -250,6 +271,117 @@ def _to_availability(result: RuleResult) -> AvailabilityResponse:
         reason_code=result.reason_code,
         message=result.message,
         http_status=result.http_status,
+    )
+
+
+def get_day_availability(
+    db: Session, current_user: User, payload: DayAvailabilityRequest
+) -> DayAvailabilityResponse:
+    """返回某天的可预约区间"""
+    role_profile = get_role_profile(current_user)
+    if not role_profile.has(booking_capability(payload.equipment_id)):
+        raise BusinessException(code=403, message="无权限预约该类型资源")
+
+    day = datetime.strptime(payload.date, "%Y-%m-%d").date()
+
+    lab = db.execute(select(Lab).where(Lab.id == payload.lab_id)).scalar_one_or_none()
+    if lab is None:
+        raise BusinessException(code=404, message="实验室不存在")
+
+    equipment = None
+    if payload.equipment_id is not None:
+        equipment = db.execute(
+            select(Equipment).where(Equipment.id == payload.equipment_id)
+        ).scalar_one_or_none()
+        if equipment is None:
+            raise BusinessException(code=404, message="实验室设备不存在")
+        if equipment.lab_id != payload.lab_id:
+            raise BusinessException(code=400, message="实验室设备不属于该实验室")
+
+    closed_day = db.scalar(
+        select(LabClosedDay.id)
+        .where(
+            LabClosedDay.lab_id == payload.lab_id,
+            LabClosedDay.date == day,
+        )
+        .limit(1)
+    )
+
+    open_minutes = _time_to_minutes(lab.open_time, -1)
+    close_minutes = _time_to_minutes(lab.close_time, -1)
+    if open_minutes < 0 or close_minutes < 0:
+        raise BusinessException(code=500, message="实验室开放时间错误,请联系管理员")
+
+    today = datetime.now().date()
+    message = None
+    if day < today:
+        message = "日期已过去"
+    elif lab.status != 1:
+        message = "实验室已关闭"
+    elif closed_day:
+        message = "实验室闭馆"
+    elif equipment is not None and equipment.status != 1:
+        message = "设备维修中"
+
+    ranges = []
+    if message is None:
+        conflict_stmt = select(Reservation).where(
+            Reservation.lab_id == payload.lab_id,
+            Reservation.date == payload.date,
+            Reservation.status.in_(OCCUPYING_STATUSES),
+        )
+        if payload.equipment_id is not None:
+            conflict_stmt = conflict_stmt.where(
+                or_(
+                    Reservation.equipment_id.is_(None),
+                    Reservation.equipment_id == payload.equipment_id,
+                )
+            )
+
+        occupied = []
+        for reservation in db.execute(conflict_stmt).scalars().all():
+            start = _time_to_minutes(reservation.start_time, -1)
+            end = _time_to_minutes(reservation.end_time, -1)
+            if start >= 0 and end > start:
+                occupied.append((start, end))
+
+        now = datetime.now()
+        cursor = open_minutes
+        if day == today:
+            cursor = max(
+                cursor,
+                ((now.hour * 60 + now.minute + TIME_INTERVAL - 1) // TIME_INTERVAL)
+                * TIME_INTERVAL,
+            )
+
+        for start, end in sorted(occupied):
+            if end <= cursor:
+                continue
+            if start > cursor:
+                ranges.append((cursor, min(start, close_minutes)))
+            cursor = max(cursor, end)
+            if cursor >= close_minutes:
+                break
+
+        if cursor < close_minutes:
+            ranges.append((cursor, close_minutes))
+
+        if not ranges:
+            message = "当天无可预约时段"
+
+    return DayAvailabilityResponse(
+        date=payload.date,
+        open_time=_minutes_to_time(open_minutes),
+        close_time=_minutes_to_time(close_minutes),
+        current_time=(datetime.now().strftime("%H:%M") if day == today else None),
+        message=message,
+        ranges=[
+            TimeRange(
+                start=_minutes_to_time(start),
+                end=_minutes_to_time(end),
+            )
+            for start, end in ranges
+        ],
     )
 
 

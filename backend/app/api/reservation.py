@@ -6,6 +6,7 @@ from app.schemas.reservation import (
     ReservationCreateRequest,
     AuditReservationRequest,
     AvailabilityRequest,
+    DayAvailabilityRequest,
 )
 from app.models.user import User
 from app.dependencies.auth import (
@@ -52,6 +53,16 @@ def check_availability(
     db: Session = Depends(get_db),
 ):
     res = reservation_service.check_availability(db, payload)
+    return Response.success(data=res)
+
+
+@router.post("/availability/day")
+def get_day_availability(
+    payload: DayAvailabilityRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    res = reservation_service.get_day_availability(db, current_user, payload)
     return Response.success(data=res)
 
 
