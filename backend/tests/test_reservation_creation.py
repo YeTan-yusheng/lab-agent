@@ -13,7 +13,11 @@ from app.models.lab import Lab
 from app.models.lab_closed_day import LabClosedDay
 from app.models.reservation import Reservation
 from app.models.user import User, UserRoles
-from app.schemas.reservation import AvailabilityRequest, ReservationCreateRequest
+from app.schemas.reservation import (
+    AvailabilityRequest,
+    DayAvailabilityRequest,
+    ReservationCreateRequest,
+)
 from app.services import reservation_service
 
 PASSWORD_HASH = hash_password("123456")
@@ -277,6 +281,100 @@ def test_availability_does_not_write_reservations(db, teacher, lab_equipment):
     reservation_service.check_availability(db, _availability(lab, equipment_1))
 
     assert _reservation_count(db) == before
+
+
+def _day_availability(lab, equipment=None, **overrides):
+    data = {"lab_id": lab.id, "date": "2099-01-01"}
+    if equipment is not None:
+        data["equipment_id"] = equipment.id
+    data.update(overrides)
+    return DayAvailabilityRequest(**data)
+
+
+def _range_contains(ranges, time):
+    return any(item.start <= time < item.end for item in ranges)
+
+
+def test_day_availability_returns_free_ranges(db, teacher, lab_equipment):
+    lab, equipment_1, _ = lab_equipment
+
+    result = reservation_service.get_day_availability(
+        db, teacher, _day_availability(lab, equipment_1)
+    )
+
+    assert result.open_time == "08:00"
+    assert result.close_time == "18:00"
+    assert result.ranges
+    assert _range_contains(result.ranges, "08:00")
+    assert _range_contains(result.ranges, "17:59")
+
+
+def test_day_availability_marks_lab_conflict(db, teacher, lab_equipment):
+    lab, _, _ = lab_equipment
+    _create(db, teacher, _payload(lab, start_time="10:00", end_time="11:00"))
+
+    result = reservation_service.get_day_availability(
+        db, teacher, _day_availability(lab)
+    )
+
+    assert not _range_contains(result.ranges, "10:15")
+    assert _range_contains(result.ranges, "12:00")
+
+
+def test_day_availability_other_equipment_is_not_blocked(
+    db, teacher, lab_equipment
+):
+    lab, equipment_1, equipment_2 = lab_equipment
+    _create(
+        db,
+        teacher,
+        _payload(lab, equipment_1, start_time="10:00", end_time="11:00"),
+    )
+
+    result = reservation_service.get_day_availability(
+        db, teacher, _day_availability(lab, equipment_2)
+    )
+
+    assert _range_contains(result.ranges, "10:15")
+
+
+def test_day_availability_closed_day_is_empty(db, teacher, lab_equipment):
+    lab, _, _ = lab_equipment
+    db.add(LabClosedDay(lab_id=lab.id, date=date(2099, 1, 1), reason="维护"))
+    db.commit()
+
+    result = reservation_service.get_day_availability(
+        db, teacher, _day_availability(lab)
+    )
+
+    assert result.ranges == []
+    assert result.message == "实验室闭馆"
+
+
+def test_day_availability_repair_equipment_is_empty(
+    db, teacher, lab_equipment
+):
+    lab, equipment_1, _ = lab_equipment
+    equipment_1.status = 0
+    db.commit()
+
+    result = reservation_service.get_day_availability(
+        db, teacher, _day_availability(lab, equipment_1)
+    )
+
+    assert result.ranges == []
+    assert result.message == "设备维修中"
+
+
+def test_day_availability_past_date_is_empty(db, teacher, lab_equipment):
+    lab, _, _ = lab_equipment
+
+    result = reservation_service.get_day_availability(
+        db, teacher, _day_availability(lab, date="2000-01-01")
+    )
+
+    assert result.ranges == []
+    assert result.message == "日期已过去"
 
 
 def test_other_lab_booking_does_not_block_availability(

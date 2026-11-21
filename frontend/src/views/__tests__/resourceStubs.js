@@ -51,7 +51,8 @@ export const resourceStubs = {
     methods: {
       onChange(event) {
         const raw = event.target.value
-        const value = raw === '' ? undefined : Number(raw)
+        const isNumeric = raw !== '' && !Number.isNaN(Number(raw))
+        const value = raw === '' ? undefined : isNumeric ? Number(raw) : raw
         this.$emit('update:modelValue', value)
         this.$emit('change')
       }

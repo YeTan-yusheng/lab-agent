@@ -153,6 +153,18 @@ def _booking_payload(lab, equipment=None, **overrides):
     return payload
 
 
+def _day_payload(lab, equipment=None, **overrides):
+    payload = {"lab_id": lab.id, "date": "2099-01-01"}
+    if equipment is not None:
+        payload["equipment_id"] = equipment.id
+    payload.update(overrides)
+    return payload
+
+
+def _range_contains(ranges, time):
+    return any(item["start"] <= time < item["end"] for item in ranges)
+
+
 def test_student_can_book_equipment(client, users, lab_equipment):
     lab, equipment = lab_equipment
 
@@ -269,6 +281,82 @@ def test_availability_and_create_agree_on_free_slot(client, users, lab_equipment
 
     created = client.post("/api/reservation", json=payload, headers=headers)
     assert created.status_code == 200
+
+
+def test_student_can_query_day_equipment_availability(
+    client, users, lab_equipment
+):
+    lab, equipment = lab_equipment
+
+    response = client.post(
+        "/api/reservation/availability/day",
+        json=_day_payload(lab, equipment),
+        headers=_headers(client, "res_student"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["ranges"]
+
+
+def test_student_cannot_query_day_lab_availability(client, users, lab_equipment):
+    lab, _ = lab_equipment
+
+    response = client.post(
+        "/api/reservation/availability/day",
+        json=_day_payload(lab),
+        headers=_headers(client, "res_student"),
+    )
+
+    assert response.status_code == 403
+
+
+def test_teacher_can_query_day_lab_availability(client, users, lab_equipment):
+    lab, _ = lab_equipment
+
+    response = client.post(
+        "/api/reservation/availability/day",
+        json=_day_payload(lab),
+        headers=_headers(client, "res_teacher"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["open_time"] == "08:00"
+
+
+def test_pure_admin_cannot_query_day_availability(client, users, lab_equipment):
+    lab, equipment = lab_equipment
+
+    response = client.post(
+        "/api/reservation/availability/day",
+        json=_day_payload(lab, equipment),
+        headers=_headers(client, "res_admin"),
+    )
+
+    assert response.status_code == 403
+
+
+def test_day_availability_reports_existing_conflict(
+    client, users, lab_equipment
+):
+    lab, _ = lab_equipment
+    headers = _headers(client, "res_teacher")
+
+    assert (
+        client.post(
+            "/api/reservation", json=_booking_payload(lab), headers=headers
+        ).status_code
+        == 200
+    )
+    response = client.post(
+        "/api/reservation/availability/day",
+        json=_day_payload(lab),
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    ranges = response.json()["data"]["ranges"]
+    assert not _range_contains(ranges, "10:15")
+    assert _range_contains(ranges, "12:00")
 
 
 def test_teacher_can_book_lab_and_equipment(client, users, lab_equipment):
