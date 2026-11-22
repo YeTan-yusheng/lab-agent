@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -152,7 +153,15 @@ def _closed_day_payload(day=CLOSED_DATE, reason="闭馆"):
 
 
 def test_lab_list_filters_status_zero(client, db, users):
-    db.add(Lab(name="关闭实验室", capacity=1, status=0))
+    db.add(
+        Lab(
+            name="关闭实验室",
+            capacity=1,
+            open_time="08:00",
+            close_time="18:00",
+            status=0,
+        )
+    )
     db.commit()
 
     response = client.get(
@@ -165,6 +174,13 @@ def test_lab_list_filters_status_zero(client, db, users):
     data = response.json()["data"]
     assert data["total"] == 1
     assert data["list"][0]["name"] == "关闭实验室"
+
+
+def test_lab_requires_open_and_close_time(db):
+    db.add(Lab(name="缺时间实验室", capacity=1, status=1))
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
 
 
 def test_lab_list_rejects_invalid_pagination(client, users):
@@ -215,6 +231,32 @@ def test_lab_create_duplicate_and_invalid_time(client, users):
     assert client.post("/api/lab", json=invalid, headers=headers).status_code == 422
 
 
+def test_lab_create_uses_default_times_and_rejects_null(client, users):
+    headers = _headers(client, "admin")
+
+    response = client.post(
+        "/api/lab",
+        json={"name": "默认开放时间实验室", "capacity": 5},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["open_time"] == "08:00"
+    assert data["close_time"] == "18:00"
+
+    for field in ("open_time", "close_time"):
+        response = client.post(
+            "/api/lab",
+            json={
+                "name": f"空时间实验室_{field}",
+                "capacity": 5,
+                field: None,
+            },
+            headers=headers,
+        )
+        assert response.status_code == 422
+
+
 def test_lab_update_rejects_null_required_and_clears_optional(
     client, db, users, lab_equipment
 ):
@@ -259,7 +301,13 @@ def test_lab_update_rejects_null_times_and_invalid_capacity(
 
 def test_lab_update_rejects_duplicate_name(client, db, users, lab_equipment):
     lab, _ = lab_equipment
-    other = Lab(name="第二实验室", capacity=1, status=1)
+    other = Lab(
+        name="第二实验室",
+        capacity=1,
+        open_time="08:00",
+        close_time="18:00",
+        status=1,
+    )
     db.add(other)
     db.commit()
 
@@ -273,7 +321,13 @@ def test_lab_update_rejects_duplicate_name(client, db, users, lab_equipment):
 
 
 def test_lab_delete_rejects_reservation(client, db, users):
-    lab = Lab(name="预约实验室", capacity=1, status=1)
+    lab = Lab(
+        name="预约实验室",
+        capacity=1,
+        open_time="08:00",
+        close_time="18:00",
+        status=1,
+    )
     db.add(lab)
     db.flush()
     db.add(
@@ -303,7 +357,13 @@ def test_lab_delete_rejects_equipment_and_cleans_closed_days(
 
     assert client.delete(f"/api/lab/{lab.id}", headers=headers).status_code == 409
 
-    empty_lab = Lab(name="无设备实验室", capacity=1, status=1)
+    empty_lab = Lab(
+        name="无设备实验室",
+        capacity=1,
+        open_time="08:00",
+        close_time="18:00",
+        status=1,
+    )
     db.add(empty_lab)
     db.flush()
     db.add(LabClosedDay(lab_id=empty_lab.id, date=CLOSED_DATE, reason="闭馆"))
@@ -409,7 +469,13 @@ def test_equipment_create_allows_same_name_in_other_lab(
     client, db, users, lab_equipment
 ):
     _, equipment = lab_equipment
-    other_lab = Lab(name="另一实验室", capacity=1, status=1)
+    other_lab = Lab(
+        name="另一实验室",
+        capacity=1,
+        open_time="08:00",
+        close_time="18:00",
+        status=1,
+    )
     db.add(other_lab)
     db.commit()
 
@@ -675,7 +741,13 @@ def test_lab_list_upcoming_closed_days_are_grouped_by_lab(
     client, db, users, lab_equipment
 ):
     lab, _ = lab_equipment
-    other = Lab(name="第二实验室", capacity=1, status=1)
+    other = Lab(
+        name="第二实验室",
+        capacity=1,
+        open_time="08:00",
+        close_time="18:00",
+        status=1,
+    )
     db.add(other)
     db.flush()
     today = datetime.date.today()

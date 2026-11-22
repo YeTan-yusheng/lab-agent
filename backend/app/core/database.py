@@ -1,8 +1,10 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, make_url
 from sqlalchemy.orm import sessionmaker
 from app.config import settings
 
-engine = create_engine(settings.database_url)
+backend = make_url(settings.database_url).get_backend_name()
+kwargs = {"isolation_level": "READ COMMITTED"} if backend == "mysql" else {}
+engine = create_engine(settings.database_url, **kwargs)
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False)
 

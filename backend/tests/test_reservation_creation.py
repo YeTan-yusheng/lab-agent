@@ -126,7 +126,13 @@ def test_closed_day_blocks_creation(db, teacher, lab_equipment):
 
 def test_equipment_from_other_lab_is_rejected(db, teacher, lab_equipment):
     lab, _, _ = lab_equipment
-    other_lab = Lab(name="其他实验室", capacity=5, status=1)
+    other_lab = Lab(
+        name="其他实验室",
+        capacity=5,
+        open_time="08:00",
+        close_time="18:00",
+        status=1,
+    )
     db.add(other_lab)
     db.flush()
     other_equipment = Equipment(
@@ -377,11 +383,38 @@ def test_day_availability_past_date_is_empty(db, teacher, lab_equipment):
     assert result.message == "日期已过去"
 
 
+@pytest.mark.parametrize(
+    ("open_time", "close_time"),
+    [("bad", "18:00"), ("08:00", "bad")],
+)
+def test_day_availability_requires_valid_open_close_time(
+    db, teacher, lab_equipment, open_time, close_time
+):
+    lab, _, _ = lab_equipment
+    lab.open_time = open_time
+    lab.close_time = close_time
+    db.commit()
+
+    with pytest.raises(BusinessException) as exc:
+        reservation_service.get_day_availability(
+            db, teacher, _day_availability(lab)
+        )
+
+    assert exc.value.code == 500
+    assert "开放时间" in exc.value.message
+
+
 def test_other_lab_booking_does_not_block_availability(
     db, teacher, lab_equipment
 ):
     lab, _, _ = lab_equipment
-    other_lab = Lab(name="跨实验室验证", capacity=5, status=1)
+    other_lab = Lab(
+        name="跨实验室验证",
+        capacity=5,
+        open_time="08:00",
+        close_time="18:00",
+        status=1,
+    )
     db.add(other_lab)
     db.flush()
     other_equipment = Equipment(

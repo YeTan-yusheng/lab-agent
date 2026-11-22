@@ -169,7 +169,7 @@ def create_reservation(
         raise BusinessException(code=409, message="预约冲突")
     except Exception:
         db.rollback()
-        raise BusinessException(message="创建预约失败")
+        raise BusinessException(code=500, message="创建预约失败")
 
 
 def find_conflicts(

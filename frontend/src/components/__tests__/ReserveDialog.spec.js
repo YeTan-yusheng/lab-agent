@@ -161,6 +161,30 @@ describe('ReserveDialog 按天可用性', () => {
     expect(wrapper.findAll('select')[1].element.value).toBe('')
   })
 
+  it('旧日期请求晚返回时不覆盖新日期的结果', async () => {
+    let resolveFirst
+    mocks.getDayAvailabilityApi
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve
+          })
+      )
+      .mockResolvedValueOnce(dayResponse([{ start: '08:00', end: '09:00' }]))
+
+    const wrapper = await mountDialog()
+    await selectDate(wrapper, '2099-01-01')
+    await selectDate(wrapper, '2099-01-02')
+
+    resolveFirst(dayResponse([{ start: '13:00', end: '14:00' }]))
+    await flushPromises()
+    await flushPromises()
+
+    const starts = optionValues(wrapper.findAll('select')[0])
+    expect(starts).toContain('08:00')
+    expect(starts).not.toContain('13:00')
+  })
+
   it('创建返回 409 时保持弹窗并显示冲突', async () => {
     mocks.createReservationApi.mockRejectedValue({
       code: 409,

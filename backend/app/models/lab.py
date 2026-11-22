@@ -18,11 +18,11 @@ class Lab(Base):
     capacity: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, comment="容纳人数"
     )
-    open_time: Mapped[str | None] = mapped_column(
-        String(5), comment="开放开始时间 HH:MM"
+    open_time: Mapped[str] = mapped_column(
+        String(5), nullable=False, comment="开放开始时间 HH:MM"
     )
-    close_time: Mapped[str | None] = mapped_column(
-        String(5), comment="开放结束时间 HH:MM"
+    close_time: Mapped[str] = mapped_column(
+        String(5), nullable=False, comment="开放结束时间 HH:MM"
     )
     description: Mapped[str | None] = mapped_column(String(500), comment="简介")
     img: Mapped[str | None] = mapped_column(String(200), comment="封面图")
