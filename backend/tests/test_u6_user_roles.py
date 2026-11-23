@@ -14,10 +14,10 @@ from app.core.database import get_db
 from app.core.exceptions import (
     BusinessException,
     RoleValidationError,
-    bussiness_excpetion_hadler,
-    http_excpetion_hadler,
+    bussiness_excpetion_handler,
+    http_excpetion_handler,
     role_validation_exception_handler,
-    validation_excpetion_hadler,
+    validation_excpetion_handler,
 )
 from app.core.password import hash_password
 from app.core.permissions import validate_roles
@@ -98,9 +98,9 @@ def _build_app():
         response.headers["X-Request-ID"] = request.state.request_id
         return response
 
-    app.add_exception_handler(BusinessException, bussiness_excpetion_hadler)
-    app.add_exception_handler(HTTPException, http_excpetion_hadler)
-    app.add_exception_handler(RequestValidationError, validation_excpetion_hadler)
+    app.add_exception_handler(BusinessException, bussiness_excpetion_handler)
+    app.add_exception_handler(HTTPException, http_excpetion_handler)
+    app.add_exception_handler(RequestValidationError, validation_excpetion_handler)
     app.add_exception_handler(RoleValidationError, role_validation_exception_handler)
     return app
 
@@ -319,8 +319,6 @@ def test_user_list_returns_base_fields_only(client, users):
     assert "capabilities" not in item
     assert "password" not in item
     assert "token_version" not in item
-
-
 
 
 def test_update_user_roles_service_respects_self_rule(db, users, fake_request):

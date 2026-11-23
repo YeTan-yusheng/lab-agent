@@ -6,19 +6,29 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
+    # 数据库配置
     database_url: str
     test_database_url: str | None = None
-
+    # JWT 配置
     jwt_secret_key: str
     jwt_expire_hours: int = 24
     jwt_algorithm: str = "HS256"
-
+    # LLM 配置
     llm_api_key: str
     llm_base_url: str
     llm_model: str
-
+    # 种子数据
     app_env: str = "development"
     seed_default_password: str | None = None
+    # 日志配置
+    log_level: str = "INFO"
+    log_format: str = "text"
+    log_color: bool = False
+    log_to_file: bool = False
+    log_dir: str = "logs"
+    log_max_bytes: int = 10 * 1024 * 1024
+    log_backup_count: int = 5
+    slow_request_ms: int = 2000
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

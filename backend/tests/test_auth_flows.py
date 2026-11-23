@@ -13,10 +13,10 @@ from app.core.database import get_db
 from app.core.exceptions import (
     BusinessException,
     RoleValidationError,
-    bussiness_excpetion_hadler,
-    http_excpetion_hadler,
+    bussiness_excpetion_handler,
+    http_excpetion_handler,
     role_validation_exception_handler,
-    validation_excpetion_hadler,
+    validation_excpetion_handler,
 )
 from app.core.password import hash_password
 from app.models.base import Base
@@ -117,9 +117,7 @@ def users(db):
     }
     result["roleless01"] = _create_user(db, "roleless01", [])
     result["disabled01"] = _create_user(db, "disabled01", ["student"], status=0)
-    result["bad_combo"] = _create_user(
-        db, "bad_combo", ["teacher", "student"]
-    )
+    result["bad_combo"] = _create_user(db, "bad_combo", ["teacher", "student"])
     return result
 
 
@@ -136,9 +134,9 @@ def _build_app():
         response.headers["X-Request-ID"] = request.state.request_id
         return response
 
-    app.add_exception_handler(BusinessException, bussiness_excpetion_hadler)
-    app.add_exception_handler(HTTPException, http_excpetion_hadler)
-    app.add_exception_handler(RequestValidationError, validation_excpetion_hadler)
+    app.add_exception_handler(BusinessException, bussiness_excpetion_handler)
+    app.add_exception_handler(HTTPException, http_excpetion_handler)
+    app.add_exception_handler(RequestValidationError, validation_excpetion_handler)
     app.add_exception_handler(RoleValidationError, role_validation_exception_handler)
     return app
 

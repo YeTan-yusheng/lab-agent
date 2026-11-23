@@ -166,10 +166,18 @@ def create_reservation(
         raise
     except IntegrityError:
         db.rollback()
-        raise BusinessException(code=409, message="预约冲突")
-    except Exception:
+        raise BusinessException(
+            code=409,
+            message="预约冲突",
+            error_code="RESERVATION_CONFLICT",
+        )
+    except Exception as exc:
         db.rollback()
-        raise BusinessException(code=500, message="创建预约失败")
+        raise BusinessException(
+            code=500,
+            message="创建预约失败",
+            error_code="INTERNAL_ERROR",
+        ) from exc
 
 
 def find_conflicts(

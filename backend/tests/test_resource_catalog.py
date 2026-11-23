@@ -15,10 +15,10 @@ from app.core.database import get_db
 from app.core.exceptions import (
     BusinessException,
     RoleValidationError,
-    bussiness_excpetion_hadler,
-    http_excpetion_hadler,
+    bussiness_excpetion_handler,
+    http_excpetion_handler,
     role_validation_exception_handler,
-    validation_excpetion_hadler,
+    validation_excpetion_handler,
 )
 from app.core.password import hash_password
 from app.models.base import Base
@@ -51,7 +51,11 @@ def _create_user(db, username, roles):
         username=username,
         password=PASSWORD_HASH,
         name=username,
-        role="admin" if "admin" in roles else ("teacher" if "teacher" in roles else "student"),
+        role=(
+            "admin"
+            if "admin" in roles
+            else ("teacher" if "teacher" in roles else "student")
+        ),
         status=1,
     )
     db.add(user)
@@ -113,9 +117,9 @@ def _build_app():
         response.headers["X-Request-ID"] = request.state.request_id
         return response
 
-    app.add_exception_handler(BusinessException, bussiness_excpetion_hadler)
-    app.add_exception_handler(HTTPException, http_excpetion_hadler)
-    app.add_exception_handler(RequestValidationError, validation_excpetion_hadler)
+    app.add_exception_handler(BusinessException, bussiness_excpetion_handler)
+    app.add_exception_handler(HTTPException, http_excpetion_handler)
+    app.add_exception_handler(RequestValidationError, validation_excpetion_handler)
     app.add_exception_handler(RoleValidationError, role_validation_exception_handler)
     return app
 
@@ -187,9 +191,7 @@ def test_lab_list_rejects_invalid_pagination(client, users):
     headers = _headers(client, "admin")
 
     assert client.get("/api/lab/list?page=0", headers=headers).status_code == 422
-    assert (
-        client.get("/api/lab/list?page_size=101", headers=headers).status_code == 422
-    )
+    assert client.get("/api/lab/list?page_size=101", headers=headers).status_code == 422
 
 
 def test_lab_detail_contains_closed_days(client, db, users, lab_equipment):
@@ -197,9 +199,7 @@ def test_lab_detail_contains_closed_days(client, db, users, lab_equipment):
     db.add(LabClosedDay(lab_id=lab.id, date=CLOSED_DATE, reason="元旦闭馆"))
     db.commit()
 
-    response = client.get(
-        f"/api/lab/{lab.id}", headers=_headers(client, "student")
-    )
+    response = client.get(f"/api/lab/{lab.id}", headers=_headers(client, "student"))
 
     assert response.status_code == 200
     data = response.json()["data"]
@@ -227,7 +227,12 @@ def test_lab_create_duplicate_and_invalid_time(client, users):
     assert client.post("/api/lab", json=payload, headers=headers).status_code == 200
     assert client.post("/api/lab", json=payload, headers=headers).status_code == 409
 
-    invalid = {**payload, "name": "非法时间实验室", "open_time": "18:00", "close_time": "08:00"}
+    invalid = {
+        **payload,
+        "name": "非法时间实验室",
+        "open_time": "18:00",
+        "close_time": "08:00",
+    }
     assert client.post("/api/lab", json=invalid, headers=headers).status_code == 422
 
 
@@ -264,7 +269,9 @@ def test_lab_update_rejects_null_required_and_clears_optional(
     headers = _headers(client, "admin")
 
     assert (
-        client.put(f"/api/lab/{lab.id}", json={"name": None}, headers=headers).status_code
+        client.put(
+            f"/api/lab/{lab.id}", json={"name": None}, headers=headers
+        ).status_code
         == 422
     )
     assert (
@@ -342,9 +349,7 @@ def test_lab_delete_rejects_reservation(client, db, users):
     )
     db.commit()
 
-    response = client.delete(
-        f"/api/lab/{lab.id}", headers=_headers(client, "admin")
-    )
+    response = client.delete(f"/api/lab/{lab.id}", headers=_headers(client, "admin"))
 
     assert response.status_code == 409
 
@@ -372,11 +377,14 @@ def test_lab_delete_rejects_equipment_and_cleans_closed_days(
     response = client.delete(f"/api/lab/{empty_lab.id}", headers=headers)
     assert response.status_code == 200
     assert db.get(Lab, empty_lab.id) is None
-    assert db.scalar(
-        select(func.count()).select_from(LabClosedDay).where(
-            LabClosedDay.lab_id == empty_lab.id
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(LabClosedDay)
+            .where(LabClosedDay.lab_id == empty_lab.id)
         )
-    ) == 0
+        == 0
+    )
 
 
 # ---------- 设备 ----------
@@ -420,9 +428,7 @@ def test_equipment_detail_includes_lab_status(client, users, lab_equipment):
 
 
 def test_equipment_detail_returns_404(client, users):
-    response = client.get(
-        "/api/equipment/999999", headers=_headers(client, "student")
-    )
+    response = client.get("/api/equipment/999999", headers=_headers(client, "student"))
 
     assert response.status_code == 404
 
@@ -585,9 +591,7 @@ def test_closed_day_upsert_and_list(client, db, users, lab_equipment):
     headers = _headers(client, "admin")
 
     assert (
-        client.get(
-            f"/api/lab/{lab.id}/closed_days", headers=headers
-        ).json()["data"]
+        client.get(f"/api/lab/{lab.id}/closed_days", headers=headers).json()["data"]
         == []
     )
 
@@ -606,9 +610,7 @@ def test_closed_day_upsert_and_list(client, db, users, lab_equipment):
     )
     assert response.status_code == 200
 
-    data = client.get(
-        f"/api/lab/{lab.id}/closed_days", headers=headers
-    ).json()["data"]
+    data = client.get(f"/api/lab/{lab.id}/closed_days", headers=headers).json()["data"]
     assert len(data) == 1
     assert data[0]["date"] == "2099-12-31"
     assert data[0]["reason"] == "第二次"
@@ -617,9 +619,7 @@ def test_closed_day_upsert_and_list(client, db, users, lab_equipment):
 def test_closed_day_requires_existing_lab(client, users):
     headers = _headers(client, "admin")
 
-    assert (
-        client.get("/api/lab/999999/closed_days", headers=headers).status_code == 404
-    )
+    assert client.get("/api/lab/999999/closed_days", headers=headers).status_code == 404
     assert (
         client.put(
             "/api/lab/999999/closed_day",
@@ -688,9 +688,7 @@ def test_closed_day_delete(client, users, lab_equipment):
         == 200
     )
     assert (
-        client.get(
-            f"/api/lab/{lab.id}/closed_days", headers=headers
-        ).json()["data"]
+        client.get(f"/api/lab/{lab.id}/closed_days", headers=headers).json()["data"]
         == []
     )
     assert (
@@ -725,9 +723,7 @@ def test_lab_list_includes_limited_upcoming_closed_days(
     response = client.get("/api/lab/list", headers=_headers(client, "student"))
 
     assert response.status_code == 200
-    item = next(
-        row for row in response.json()["data"]["list"] if row["id"] == lab.id
-    )
+    item = next(row for row in response.json()["data"]["list"] if row["id"] == lab.id)
     upcoming = item["upcoming_closed_days"]
     assert [day["date"] for day in upcoming] == [
         today.isoformat(),
@@ -786,15 +782,11 @@ def test_lab_list_without_closed_days_returns_empty_upcoming(
     response = client.get("/api/lab/list", headers=_headers(client, "student"))
 
     assert response.status_code == 200
-    item = next(
-        row for row in response.json()["data"]["list"] if row["id"] == lab.id
-    )
+    item = next(row for row in response.json()["data"]["list"] if row["id"] == lab.id)
     assert item["upcoming_closed_days"] == []
 
 
-def test_lab_detail_keeps_full_closed_day_history(
-    client, db, users, lab_equipment
-):
+def test_lab_detail_keeps_full_closed_day_history(client, db, users, lab_equipment):
     lab, _ = lab_equipment
     today = datetime.date.today()
     past = today - datetime.timedelta(days=1)
@@ -839,8 +831,7 @@ def test_write_requires_manage_resources(client, users, lab_equipment):
         == 403
     )
     assert (
-        client.delete(f"/api/lab/{lab.id}", headers=student_headers).status_code
-        == 403
+        client.delete(f"/api/lab/{lab.id}", headers=student_headers).status_code == 403
     )
     assert (
         client.post(

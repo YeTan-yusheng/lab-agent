@@ -41,6 +41,8 @@ def get_current_user(
     if user.token_version != ver:
         raise HTTPException(status_code=401, detail="登录已失效请重新登录")
 
+    request.state.user_id = user.id
+
     try:
         role_profile = get_role_profile(user)
     except RoleValidationError as e:

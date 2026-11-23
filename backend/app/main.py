@@ -1,32 +1,33 @@
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.exceptions import RequestValidationError
+import asyncio
+import logging
+from contextlib import asynccontextmanager, suppress
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
-import asyncio
-import uuid
 
-from app.services import reservation_service
-from app.models.base import Base
-from app.core.database import engine
 from app.api import app as api_router
 from app.config import UPLOAD_DIR
-from app.core.exceptions import (
-    BusinessException,
-    RoleValidationError,
-    bussiness_excpetion_hadler,
-    http_excpetion_hadler,
-    validation_excpetion_hadler,
-    global_excpetion_hadler,
-    role_validation_exception_handler,
-)
+from app.core.exceptions import register_exception_handlers
+from app.core.logging import configure_logging
+from app.core.middleware import RequestContextMiddleware
+from app.services import reservation_service
+
+configure_logging()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("app_started")
     task = asyncio.create_task(reservation_service.run_expire_scan())
-    yield
-    task.cancel()
+    try:
+        yield
+    finally:
+        task.cancel()
+        # 捕获并忽略取消异常
+        with suppress(asyncio.CancelledError):
+            await task
+        logger.info("app_stopped")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -41,29 +42,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_credentials=True,
 )
+app.add_middleware(RequestContextMiddleware)
 
-
-app.add_exception_handler(BusinessException, bussiness_excpetion_hadler)
-app.add_exception_handler(HTTPException, http_excpetion_hadler)
-app.add_exception_handler(RequestValidationError, validation_excpetion_hadler)
-app.add_exception_handler(RoleValidationError, role_validation_exception_handler)
-# 全局的异常兜底，必须放在最后注册！！
-app.add_exception_handler(Exception, global_excpetion_hadler)
+register_exception_handlers(app)
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
-
-
-@app.middleware("http")
-async def request_id_middleware(request: Request, call_next):
-    request_id = str(request.headers.get("X-Request-ID") or uuid.uuid4().hex)[:64]
-    request.state.request_id = request_id
-    try:
-        response = await call_next(request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    else:
-        response.headers["X-Request-ID"] = request_id
-        return response
 
 
 @app.get("/")

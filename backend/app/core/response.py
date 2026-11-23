@@ -16,6 +16,14 @@ class Response(BaseModel):
         return cls(code=code, message=message)
 
 
+class ErrorResponse(BaseModel):
+    code: int
+    message: str
+    data: Any = None
+    error_code: str | None = None
+    request_id: str | None = None
+
+
 class PageResponse(BaseModel):
     list: Any = []
     total: int = 0

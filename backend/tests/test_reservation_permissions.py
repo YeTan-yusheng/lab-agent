@@ -13,10 +13,10 @@ from app.core.database import get_db
 from app.core.exceptions import (
     BusinessException,
     RoleValidationError,
-    bussiness_excpetion_hadler,
-    http_excpetion_hadler,
+    bussiness_excpetion_handler,
+    http_excpetion_handler,
     role_validation_exception_handler,
-    validation_excpetion_hadler,
+    validation_excpetion_handler,
 )
 from app.core.password import hash_password
 from app.models.base import Base
@@ -47,7 +47,11 @@ def _create_user(db, username, roles):
         username=username,
         password=PASSWORD_HASH,
         name=username,
-        role="admin" if "admin" in roles else ("teacher" if "teacher" in roles else "student"),
+        role=(
+            "admin"
+            if "admin" in roles
+            else ("teacher" if "teacher" in roles else "student")
+        ),
         status=1,
     )
     db.add(user)
@@ -108,9 +112,9 @@ def _build_app():
         response.headers["X-Request-ID"] = request.state.request_id
         return response
 
-    app.add_exception_handler(BusinessException, bussiness_excpetion_hadler)
-    app.add_exception_handler(HTTPException, http_excpetion_hadler)
-    app.add_exception_handler(RequestValidationError, validation_excpetion_hadler)
+    app.add_exception_handler(BusinessException, bussiness_excpetion_handler)
+    app.add_exception_handler(HTTPException, http_excpetion_handler)
+    app.add_exception_handler(RequestValidationError, validation_excpetion_handler)
     app.add_exception_handler(RoleValidationError, role_validation_exception_handler)
     return app
 
@@ -245,7 +249,10 @@ def test_availability_reports_existing_lab_conflict(client, users, lab_equipment
     headers = _headers(client, "res_teacher")
     payload = _booking_payload(lab)
 
-    assert client.post("/api/reservation", json=payload, headers=headers).status_code == 200
+    assert (
+        client.post("/api/reservation", json=payload, headers=headers).status_code
+        == 200
+    )
     response = client.post(
         "/api/reservation/availability",
         json=payload,
@@ -283,9 +290,7 @@ def test_availability_and_create_agree_on_free_slot(client, users, lab_equipment
     assert created.status_code == 200
 
 
-def test_student_can_query_day_equipment_availability(
-    client, users, lab_equipment
-):
+def test_student_can_query_day_equipment_availability(client, users, lab_equipment):
     lab, equipment = lab_equipment
 
     response = client.post(
@@ -335,9 +340,7 @@ def test_pure_admin_cannot_query_day_availability(client, users, lab_equipment):
     assert response.status_code == 403
 
 
-def test_day_availability_reports_existing_conflict(
-    client, users, lab_equipment
-):
+def test_day_availability_reports_existing_conflict(client, users, lab_equipment):
     lab, _ = lab_equipment
     headers = _headers(client, "res_teacher")
 

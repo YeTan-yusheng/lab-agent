@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.config import settings
 from app.core.database import get_db
-from app.core.exceptions import http_excpetion_hadler
+from app.core.exceptions import http_excpetion_handler
 from app.core.jwt import create_access_token, decode_access_token
 from app.core.password import hash_password
 from app.core.permissions import Capability, validate_roles
@@ -121,7 +121,7 @@ def _capability_endpoint(capability: Capability):
 
 def _build_app():
     app = FastAPI()
-    app.add_exception_handler(HTTPException, http_excpetion_hadler)
+    app.add_exception_handler(HTTPException, http_excpetion_handler)
 
     @app.get("/_test/me")
     def me(current_user: User = Depends(get_current_user)):
