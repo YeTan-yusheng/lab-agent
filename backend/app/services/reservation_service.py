@@ -3,11 +3,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, select
 from datetime import datetime
 import asyncio
+import logging
+import uuid
 
 from app.models.user import User
 from app.models.lab import Lab
 from app.models.equipment import Equipment
 from app.models.reservation import Reservation
+from app.models.reservation_status_history import ReservationStatusHistory
 from app.core.exceptions import BusinessException
 from app.core.response import PageResponse
 from app.core.database import SessionLocal
@@ -26,7 +29,11 @@ from app.core.permissions import (
     get_role_profile,
     booking_capability,
 )
-from app.core.reservation_lifecycle import ReservationErrorCode
+from app.core.reservation_lifecycle import (
+    ReservationAction,
+    ReservationErrorCode,
+    ReservationStatus,
+)
 from app.core.reservation_rules import (
     OCCUPYING_STATUSES,
     RuleResult,
@@ -39,6 +46,48 @@ from app.core.reservation_rules import (
 from app.models.lab_closed_day import LabClosedDay
 
 TIME_INTERVAL = 10  # 预约时间间隔，单位分钟
+
+logger = logging.getLogger(__name__)
+
+
+def _record_status_change(
+    db: Session,
+    reservation: Reservation,
+    *,
+    from_status: int | None,
+    to_status: int,
+    action: ReservationAction,
+    actor_id: int | None,
+    request_id: str | None,
+    reason: str | None = None,
+) -> ReservationStatusHistory:
+    """改状态并写历史、调用方负责提交事务。"""
+    if reservation.id is None:
+        db.flush()
+    request_id = request_id or uuid.uuid4().hex
+    reservation.status = int(to_status)
+    history = ReservationStatusHistory(
+        reservation_id=reservation.id,
+        from_status=from_status,
+        to_status=int(to_status),
+        action=action.value,
+        actor_id=actor_id,
+        reason=reason,
+        request_id=request_id,
+    )
+    db.add(history)
+    logger.info(
+        "reservation_status_changed",
+        extra={
+            "request_id": request_id,
+            "reservation_id": reservation.id,
+            "actor_id": actor_id,
+            "action": action.value,
+            "from_status": from_status,
+            "to_status": int(to_status),
+        },
+    )
+    return history
 
 
 def _time_to_minutes(value: str | None, default: int) -> int:
@@ -95,54 +144,162 @@ def get_reservation_page_list(
 
 def cancel_reservation(db: Session, reservation_id: int, current_user: User):
     reservation = db.execute(
-        select(Reservation).where(Reservation.id == reservation_id)
+        select(Reservation)
+        .where(Reservation.id == reservation_id)
+        .with_for_update()
     ).scalar_one_or_none()
     if not reservation:
         raise BusinessException(message="预约不存在")
     if reservation.user_id != current_user.id:
         raise BusinessException(message="无权限", code=403)
-    if reservation.status != 0:
-        raise BusinessException(message="当前状态无法取消")
-    reservation.status = 3
+    if reservation.status != ReservationStatus.PENDING:
+        raise BusinessException(
+            message="当前状态无法取消",
+            code=409,
+            error_code=ReservationErrorCode.INVALID_STATUS_TRANSITION.value,
+        )
+    reservation.status = ReservationStatus.CANCELLED
     db.commit()
 
 
 def audit_reservation(
-    db: Session, current_user: User, reservation_id: int, status: int
+    db: Session,
+    current_user: User,
+    reservation_id: int,
+    status: int,
+    reject_reason: str | None = None,
+    self_audit: bool = False,
+    request_id: str | None = None,
+    now: datetime | None = None,
 ):
     """审核预约记录"""
     role_profile = get_role_profile(current_user)
     if not role_profile.has(Capability.audit_reservation):
-        raise BusinessException(code=403, message="无权限审核预约记录")
+        raise BusinessException(
+            code=403,
+            message="无权限审核预约记录",
+            error_code=ReservationErrorCode.FORBIDDEN.value,
+        )
+    
+    if status not in (ReservationStatus.APPROVED, ReservationStatus.REJECTED):
+        raise BusinessException(
+            code=422,
+            message="审核状态错误",
+            error_code=ReservationErrorCode.INVALID_AUDIT_STATUS.value,
+        )
 
-    reservation = db.execute(
-        select(Reservation).where(Reservation.id == reservation_id)
-    ).scalar_one_or_none()
-    if status not in [1, 2]:
-        raise BusinessException(message="审核状态错误")
-    if not reservation:
-        raise BusinessException(message="预约不存在")
-    if reservation.status != 0:
-        raise BusinessException(message="当前状态不支持审核")
-    reservation.status = status
-    db.commit()
+    reason = reject_reason.strip() if reject_reason is not None else ""
+    if status == ReservationStatus.REJECTED and not reason:
+        raise BusinessException(
+            code=422,
+            message="拒绝预约必须填写原因",
+            error_code=ReservationErrorCode.REJECT_REASON_REQUIRED.value,
+        )
+    if status == ReservationStatus.APPROVED and reason:
+        raise BusinessException(
+            code=422,
+            message="通过预约时不能填写拒绝原因",
+            error_code=ReservationErrorCode.REJECT_REASON_NOT_ALLOWED.value,
+        )
+
+    try:
+        reservation = db.execute(
+            select(Reservation)
+            .where(Reservation.id == reservation_id)
+            .with_for_update()
+        ).scalar_one_or_none()
+        if reservation is None:
+            raise BusinessException(
+                code=404,
+                message="预约不存在",
+                error_code=ReservationErrorCode.NOT_FOUND.value,
+            )
+        if reservation.status != ReservationStatus.PENDING:
+            raise BusinessException(
+                code=409,
+                message="当前状态不支持审核",
+                error_code=ReservationErrorCode.INVALID_STATUS_TRANSITION.value,
+            )
+
+        is_owner = reservation.user_id == current_user.id
+        if is_owner and not self_audit:
+            raise BusinessException(
+                code=403,
+                message="本人预约必须显式自审",
+                error_code=ReservationErrorCode.SELF_AUDIT_REQUIRED.value,
+            )
+        if not is_owner and self_audit:
+            raise BusinessException(
+                code=422,
+                message="只能对本人预约使用自审",
+                error_code=ReservationErrorCode.SELF_AUDIT_INVALID.value,
+            )
+
+        from_status = reservation.status
+        reservation.reviewer_id = current_user.id
+        reservation.reviewed_at = now or datetime.now()
+        reservation.reject_reason = reason if status == ReservationStatus.REJECTED else None
+        reservation.self_audit = is_owner and status == ReservationStatus.APPROVED
+        _record_status_change(
+            db,
+            reservation,
+            from_status=from_status,
+            to_status=status,
+            action=(
+                ReservationAction.APPROVE
+                if status == ReservationStatus.APPROVED
+                else ReservationAction.REJECT
+            ),
+            actor_id=current_user.id,
+            request_id=request_id,
+            reason=reason if status == ReservationStatus.REJECTED else None,
+        )
+        db.commit()
+    except BusinessException:
+        db.rollback()
+        raise
+    except IntegrityError:
+        db.rollback()
+        raise BusinessException(
+            code=409,
+            message="预约状态冲突",
+            error_code=ReservationErrorCode.INVALID_STATUS_TRANSITION.value,
+        )
+    except Exception as exc:
+        db.rollback()
+        raise BusinessException(
+            code=500,
+            message="审核预约失败",
+            error_code=ReservationErrorCode.INTERNAL_ERROR.value,
+        ) from exc
 
 
 def create_reservation(
-    db: Session, current_user: User, payload: ReservationCreateRequest
+    db: Session,
+    current_user: User,
+    payload: ReservationCreateRequest,
+    request_id: str | None = None,
 ):
     """创建预约记录"""
     role_profile = get_role_profile(current_user)
     required = booking_capability(payload.equipment_id)
     if not role_profile.has(required):
-        raise BusinessException(code=403, message="无权限预约该类型资源")
+        raise BusinessException(
+            code=403,
+            message="无权限预约该类型资源",
+            error_code=ReservationErrorCode.FORBIDDEN.value,
+        )
 
     try:
         lab = db.execute(
             select(Lab).where(Lab.id == payload.lab_id).with_for_update()
         ).scalar_one_or_none()
         if lab is None:
-            raise BusinessException(code=404, message="实验室不存在")
+            raise BusinessException(
+                code=404,
+                message="实验室不存在",
+                error_code=ReservationErrorCode.NOT_FOUND.value,
+            )
 
         check_result = check_availability(db, payload, lock_conflicts=True)
         if not check_result.available:
@@ -150,7 +307,7 @@ def create_reservation(
                 code=check_result.http_status, message=check_result.message
             )
 
-        resvervation_model = Reservation(
+        reservation = Reservation(
             user_id=current_user.id,
             lab_id=payload.lab_id,
             equipment_id=payload.equipment_id,
@@ -158,9 +315,20 @@ def create_reservation(
             start_time=payload.start_time,
             end_time=payload.end_time,
             remark=payload.remark,
-            status=0,
+            status=ReservationStatus.PENDING,
         )
-        db.add(resvervation_model)
+        db.add(reservation)
+        db.flush()
+
+        _record_status_change(
+            db,
+            reservation,
+            from_status=None,
+            to_status=ReservationStatus.PENDING,
+            action=ReservationAction.SUBMIT,
+            actor_id=current_user.id,
+            request_id=request_id,
+        )
         db.commit()
     except BusinessException:
         db.rollback()

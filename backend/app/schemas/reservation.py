@@ -56,6 +56,10 @@ class ReservationResponse(BaseModel):
 
 class AuditReservationRequest(BaseModel):
     status: int  # 只能是 1 通过 或 2 不通过
+    reject_reason: str | None = Field(
+        default=None, max_length=255, description="拒绝原因"
+    )
+    self_audit: bool = Field(default=False, description="本人审核时是否显式自审")
 
 
 class ConflictInfo(BaseModel):

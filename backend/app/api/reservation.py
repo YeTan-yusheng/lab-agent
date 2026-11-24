@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 
@@ -39,10 +39,16 @@ def get_reservation_page_list(
 @router.post("")
 def create_reservation(
     payload: ReservationCreateRequest,
+    request: Request,
     current_user: User = Depends(require_booking_capability),
     db: Session = Depends(get_db),
 ):
-    reservation_service.create_reservation(db, current_user, payload)
+    reservation_service.create_reservation(
+        db,
+        current_user,
+        payload,
+        request_id=request.state.request_id,
+    )
     return Response.success()
 
 
@@ -80,10 +86,17 @@ def cancel_reservation(
 def audit_reservation(
     reservation_id: int,
     payload: AuditReservationRequest,
+    request: Request,
     current_user: User = Depends(require_capability(Capability.audit_reservation)),
     db: Session = Depends(get_db),
 ):
     reservation_service.audit_reservation(
-        db, current_user, reservation_id, payload.status
+        db,
+        current_user,
+        reservation_id,
+        payload.status,
+        reject_reason=payload.reject_reason,
+        self_audit=payload.self_audit,
+        request_id=request.state.request_id,
     )
     return Response.success()

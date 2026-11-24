@@ -17,6 +17,7 @@ from app.models.equipment import Equipment
 from app.models.lab import Lab
 from app.models.lab_closed_day import LabClosedDay
 from app.models.reservation import Reservation
+from app.models.reservation_status_history import ReservationStatusHistory
 from app.models.user import User, UserRoles
 from app.schemas.reservation import ReservationCreateRequest
 from app.services import reservation_service
@@ -86,12 +87,20 @@ def concurrency_data(mysql_engine):
             role="student",
             status=1,
         )
-        db.add_all([teacher, student])
+        admin = User(
+            username=f"concurrency_admin_{suffix}",
+            password=hash_password("123456"),
+            name="并发管理员",
+            role="admin",
+            status=1,
+        )
+        db.add_all([teacher, student, admin])
         db.flush()
         db.add_all(
             [
                 UserRoles(user_id=teacher.id, role_code="teacher"),
                 UserRoles(user_id=student.id, role_code="student"),
+                UserRoles(user_id=admin.id, role_code="admin"),
             ]
         )
 
@@ -130,6 +139,7 @@ def concurrency_data(mysql_engine):
             "session_factory": session_factory,
             "teacher_id": teacher.id,
             "student_id": student.id,
+            "admin_id": admin.id,
             "lab_a_id": lab_a.id,
             "lab_b_id": lab_b.id,
             "equipment_a1_id": equipment_a1.id,
@@ -141,8 +151,14 @@ def concurrency_data(mysql_engine):
 
     with session_factory() as db:
         lab_ids = [data["lab_a_id"], data["lab_b_id"]]
-        user_ids = [data["teacher_id"], data["student_id"]]
+        user_ids = [data["teacher_id"], data["student_id"], data["admin_id"]]
         db.execute(delete(LabClosedDay).where(LabClosedDay.lab_id.in_(lab_ids)))
+        reservation_ids = select(Reservation.id).where(Reservation.lab_id.in_(lab_ids))
+        db.execute(
+            delete(ReservationStatusHistory).where(
+                ReservationStatusHistory.reservation_id.in_(reservation_ids)
+            )
+        )
         db.execute(delete(Reservation).where(Reservation.lab_id.in_(lab_ids)))
         db.execute(delete(Equipment).where(Equipment.lab_id.in_(lab_ids)))
         db.execute(delete(Lab).where(Lab.id.in_(lab_ids)))
@@ -433,3 +449,131 @@ def test_failed_commit_leaves_no_reservation(concurrency_data, monkeypatch):
     )
     assert results == ["success"], results
     assert _reservation_count(data, lab_id=data["lab_a_id"]) == 1
+
+
+def _create_pending_reservation(data, *, user_id=None):
+    with data["session_factory"]() as db:
+        reservation = Reservation(
+            user_id=user_id or data["student_id"],
+            lab_id=data["lab_a_id"],
+            date=BOOKING_DATE,
+            start_time="10:00",
+            end_time="11:00",
+            status=0,
+        )
+        db.add(reservation)
+        db.commit()
+        return reservation.id
+
+
+def _attempt_audit(session_factory, user_id, reservation_id, status, barrier):
+    db = session_factory()
+    try:
+        user = db.get(User, user_id)
+        assert user is not None
+        _ = list(user.roles)
+        barrier.wait(timeout=10)
+        try:
+            reservation_service.audit_reservation(
+                db, user, reservation_id, status
+            )
+            return "success"
+        except BusinessException as exc:
+            db.rollback()
+            return exc.code
+    finally:
+        db.close()
+
+
+def _attempt_cancel(session_factory, user_id, reservation_id, barrier):
+    db = session_factory()
+    try:
+        user = db.get(User, user_id)
+        assert user is not None
+        _ = list(user.roles)
+        barrier.wait(timeout=10)
+        try:
+            reservation_service.cancel_reservation(db, reservation_id, user)
+            return "success"
+        except BusinessException as exc:
+            db.rollback()
+            return exc.code
+    finally:
+        db.close()
+
+
+def _history_count(data, reservation_id):
+    with data["session_factory"]() as db:
+        return db.scalar(
+            select(func.count())
+            .select_from(ReservationStatusHistory)
+            .where(
+                ReservationStatusHistory.reservation_id == reservation_id
+            )
+        )
+
+
+def test_concurrent_audits_allow_only_one_winner(concurrency_data):
+    data = concurrency_data
+    reservation_id = _create_pending_reservation(data)
+    barrier = threading.Barrier(2)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(
+                _attempt_audit,
+                data["session_factory"],
+                data["admin_id"],
+                reservation_id,
+                1,
+                barrier,
+            )
+            for _ in range(2)
+        ]
+        results = [future.result(timeout=30) for future in futures]
+
+    assert results.count("success") == 1, results
+    assert results.count(409) == 1, results
+    assert _history_count(data, reservation_id) == 1
+
+
+def test_audit_and_cancel_race_has_only_one_winner(concurrency_data):
+    data = concurrency_data
+    reservation_id = _create_pending_reservation(data)
+    barrier = threading.Barrier(2)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        audit_future = executor.submit(
+            _attempt_audit,
+            data["session_factory"],
+            data["admin_id"],
+            reservation_id,
+            1,
+            barrier,
+        )
+        cancel_future = executor.submit(
+            _attempt_cancel,
+            data["session_factory"],
+            data["student_id"],
+            reservation_id,
+            barrier,
+        )
+        results = [audit_future.result(timeout=30), cancel_future.result(timeout=30)]
+
+    assert results.count("success") == 1, results
+    assert results.count(409) == 1, results
+
+    with data["session_factory"]() as db:
+        reservation = db.get(Reservation, reservation_id)
+        assert reservation.status in (1, 3)
+        history_count = db.scalar(
+            select(func.count())
+            .select_from(ReservationStatusHistory)
+            .where(
+                ReservationStatusHistory.reservation_id == reservation_id
+            )
+        )
+        if reservation.status == 1:
+            assert history_count == 1
+        else:
+            assert history_count == 0

@@ -357,7 +357,12 @@ def _build_all_tools(context: ToolContext):
             remark=remark,
         )
 
-        reservation_service.create_reservation(db, current_user, payload)
+        reservation_service.create_reservation(
+            db,
+            current_user,
+            payload,
+            request_id=context.request_id,
+        )
         return json.dumps(
             {"ok": True, "message": "预约提交成功，等待管理员审核"},
             ensure_ascii=False,
