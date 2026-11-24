@@ -144,6 +144,7 @@ def test_validation_error_does_not_log_input(client, caplog):
     assert "not-int" not in _app_log_text(caplog)
     record = next(r for r in caplog.records if r.msg == "validation_failed")
     assert record.levelno == logging.WARNING
+    assert record.error_fields == "query.q"
 
 
 def test_access_log_omits_query_string(client, caplog):
@@ -204,11 +205,13 @@ def test_text_formatter_includes_request_id_and_extras():
     )
     record.request_id = "req-format"
     record.reservation_id = 12
+    record.tool_name = "search_lab_docs"
 
     text = TextFormatter().format(record)
 
     assert "[req-format]" in text
     assert "reservation_id=12" in text
+    assert "tool_name=search_lab_docs" in text
 
 
 class _TTY:

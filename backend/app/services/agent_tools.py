@@ -1,3 +1,4 @@
+import logging
 import json
 from dataclasses import dataclass
 from collections.abc import Callable
@@ -24,6 +25,7 @@ from app.services.audit_service import (
     write_failed_tool_calling_audit,
 )
 
+logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ToolContext:
@@ -203,7 +205,7 @@ def _execute_tool(
             result="success",
         )
     except Exception as e:
-        print(f"写入工具调用审计失败: {e}")
+        logger.error(f"写入工具调用审计失败: {e}")
     return result
 
 

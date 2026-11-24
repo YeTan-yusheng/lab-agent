@@ -27,11 +27,13 @@ def _http_status(code: int, default: int) -> int:
 
 
 def _request_id(request: Request) -> str:
-    return (
-        getattr(request.state, "request_id", None)
-        or request_id_ctx.get()
-        or uuid.uuid4().hex
+    request_id = (
+        getattr(request.state, "request_id", None) or request_id_ctx.get()
     )
+    if not request_id:
+        request_id = uuid.uuid4().hex
+        request.state.request_id = request_id
+    return request_id
 
 
 def _error(
@@ -129,6 +131,9 @@ async def validation_excpetion_handler(request: Request, exc: RequestValidationE
             "path": request.url.path,
             "status_code": 422,
             "error_count": len(errors),
+            "error_fields": ",".join(
+                ".".join(error["loc"]) for error in errors
+            ),
         },
     )
     return _error(

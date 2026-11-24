@@ -1,5 +1,4 @@
-from fastapi import Request
-from sqlalchemy.orm import Session
+import logging
 from langchain_openai import ChatOpenAI
 from langgraph.graph import MessagesState, StateGraph, START
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -9,7 +8,6 @@ from collections.abc import AsyncIterator
 
 from app.schemas.ai import ChatRequest
 from app.config import settings
-from app.models.user import User
 from app.services import agent_tools
 from app.core.exceptions import BusinessException
 from app.core.permissions import get_role_profile
@@ -32,6 +30,9 @@ SYSTEM_PROMPT = """你是智能实验室预约系统的 Agent，回答要简洁�
 不要瞎编数据库里没有的实验室或者设备信息。
 如果是问开放时间或者实验室规则，优先调用 search_lab_docs，不要凭空回复。
 """
+
+logger = logging.getLogger(__name__)
+
 
 TOOL_LABELS = {
     "search_lab_docs": "检索实验室知识库",
@@ -168,5 +169,5 @@ async def stream_agent(
     except BusinessException as exc:
         yield {"type": "error", "message": exc.message}
     except Exception as e:
-        print(e)
+        logger.error(f"大模型调用失败: {e}")
         yield {"type": "error", "message": "大模型调用失败，请稍后重试"}

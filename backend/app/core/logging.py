@@ -38,6 +38,8 @@ EXTRA_FIELDS = (
     "from_status",
     "to_status",
     "error_code",
+    "tool_name",
+    "error_fields",
     "slow",
 )
 
