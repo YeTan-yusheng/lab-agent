@@ -28,11 +28,21 @@ def get_reservation_page_list(
     page: int = 1,
     page_size: int = 10,
     status: int | None = None,
+    lab_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     res = reservation_service.get_reservation_page_list(
-        db, current_user, page, page_size, status
+        db,
+        current_user,
+        page,
+        page_size,
+        status,
+        lab_id,
+        date_from,
+        date_to,
     )
     return Response.success(data=res)
 
@@ -71,6 +81,29 @@ def get_day_availability(
 ):
     res = reservation_service.get_day_availability(db, current_user, payload)
     return Response.success(data=res)
+
+
+@router.get("/audit/pending-count")
+def get_audit_pending_count(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    count = reservation_service.get_audit_pending_count(db, current_user)
+    return Response.success(data={"count": count})
+
+
+@router.get("/{reservation_id}/history")
+def get_reservation_history(
+    reservation_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    history = reservation_service.get_reservation_history(
+        db, current_user, reservation_id
+    )
+    return Response.success(
+        data=[item.model_dump(mode="json") for item in history]
+    )
 
 
 @router.put("/{reservation_id}/cancel")

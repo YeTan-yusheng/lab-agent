@@ -67,6 +67,17 @@ class CancelReservationRequest(BaseModel):
     force: bool = Field(default=False, description="管理员强制取消")
 
 
+class ReservationHistoryItem(BaseModel):
+    id: int
+    action: str
+    from_status: int | None = None
+    to_status: int
+    reason: str | None = None
+    actor_name: str | None = None
+    request_id: str
+    create_time: datetime
+
+
 class ConflictInfo(BaseModel):
     reservation_id: int
     type: str  # lab或equipment

@@ -1,7 +1,8 @@
 from sqlalchemy import ForeignKey, Index, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.user import User
 
 
 class ReservationStatusHistory(Base):
@@ -44,3 +45,5 @@ class ReservationStatusHistory(Base):
     request_id: Mapped[str] = mapped_column(
         String(64), comment="请求ID", nullable=False
     )
+
+    actor: Mapped[User | None] = relationship(foreign_keys=[actor_id])

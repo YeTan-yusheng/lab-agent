@@ -1,9 +1,10 @@
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
-from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import and_, func, or_, select, update
 from datetime import datetime, timedelta
 import asyncio
 import logging
+import time
 import uuid
 
 from app.models.user import User
@@ -23,6 +24,7 @@ from app.schemas.reservation import (
     DayAvailabilityRequest,
     DayAvailabilityResponse,
     TimeRange,
+    ReservationHistoryItem,
 )
 from app.core.permissions import (
     Capability,
@@ -106,24 +108,61 @@ def _minutes_to_time(value: int) -> str:
     return f"{value // 60:02d}:{value % 60:02d}"
 
 
+def _normalize_date_filter(value: str | None, field: str) -> str | None:
+    """将日期字符串规范化为 YYYY-MM-DD 格式"""
+    if value is None:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        raise BusinessException(
+            code=422,
+            message=f"{field} 格式必须为 YYYY-MM-DD",
+            error_code="VALIDATION_ERROR",
+        )
+
+
 def get_reservation_page_list(
     db: Session,
     current_user: User,
     page: int,
     page_size: int,
     status: int | None = None,
+    lab_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ):
-    """查询预约记录"""
+    """查询预约记录，按角色限制范围并支持筛选。"""
     role_profile = get_role_profile(current_user)
+    date_from = _normalize_date_filter(date_from, "date_from")
+    date_to = _normalize_date_filter(date_to, "date_to")
+    if date_from and date_to and date_from > date_to:
+        raise BusinessException(
+            code=422,
+            message="date_from 不能晚于 date_to",
+            error_code="VALIDATION_ERROR",
+        )
 
     stmt = select(Reservation)
-
     if role_profile.has(Capability.audit_reservation):
-        stmt = stmt.where(Reservation.status != 3)
+        if status is None:
+            stmt = stmt.where(
+                Reservation.status.notin_(
+                    (ReservationStatus.CANCELLED, ReservationStatus.EXPIRED)
+                )
+            )
     else:
         stmt = stmt.where(Reservation.user_id == current_user.id)
+
     if status is not None:
         stmt = stmt.where(Reservation.status == status)
+    if lab_id is not None:
+        stmt = stmt.where(Reservation.lab_id == lab_id)
+    if date_from is not None:
+        stmt = stmt.where(Reservation.date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(Reservation.date <= date_to)
+
     total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar()
     items = db.execute(
         stmt.order_by(Reservation.id.desc())
@@ -140,6 +179,63 @@ def get_reservation_page_list(
         res.type = "设备" if item.equipment_id else "实验室"
         result.append(res)
     return PageResponse(list=result, total=total)
+
+
+def get_audit_pending_count(db: Session, current_user: User) -> int:
+    role_profile = get_role_profile(current_user)
+    if not role_profile.has(Capability.audit_reservation):
+        raise BusinessException(
+            code=403,
+            message="无权限查看待审核数量",
+            error_code=ReservationErrorCode.FORBIDDEN.value,
+        )
+    return db.scalar(
+        select(func.count())
+        .select_from(Reservation)
+        .where(Reservation.status == ReservationStatus.PENDING)
+    )
+
+
+def get_reservation_history(
+    db: Session, current_user: User, reservation_id: int
+) -> list[ReservationHistoryItem]:
+    reservation = db.get(Reservation, reservation_id)
+    if reservation is None:
+        raise BusinessException(
+            code=404,
+            message="预约不存在",
+            error_code=ReservationErrorCode.NOT_FOUND.value,
+        )
+
+    role_profile = get_role_profile(current_user)
+    if reservation.user_id != current_user.id and not role_profile.has(
+        Capability.audit_reservation
+    ):
+        raise BusinessException(
+            code=403,
+            message="无权限查看预约历史",
+            error_code=ReservationErrorCode.FORBIDDEN.value,
+        )
+
+    items = db.scalars(
+        select(ReservationStatusHistory)
+        .where(ReservationStatusHistory.reservation_id == reservation_id)
+        .order_by(ReservationStatusHistory.id)
+        .options(selectinload(ReservationStatusHistory.actor))
+    ).all()
+    return [
+        ReservationHistoryItem(
+            id=item.id,
+            action=item.action,
+            from_status=item.from_status,
+            to_status=item.to_status,
+            reason=item.reason,
+            actor_name=item.actor.name if item.actor else None,
+            request_id=item.request_id,
+            create_time=item.create_time,
+        )
+        for item in items
+    ]
 
 
 def cancel_reservation(
@@ -657,26 +753,107 @@ def get_day_availability(
     )
 
 
-# 过期自动释放未审核预约
-def expire_pending_reservations():
-    db = SessionLocal()
+def expire_pending_reservations(
+    db: Session | None = None,
+    *,
+    now: datetime | None = None,
+    batch_size: int = 200,
+) -> int:
+    """把开始时间已过的待审核预约改为过期，并写历史。"""
+    owns_session = db is None
+    if db is None:
+        db = SessionLocal()
+
+    now = now or datetime.now()
+    today = now.date().isoformat()
+    now_time = now.strftime("%H:%M")
+    batch_id = f"system:expire:{uuid.uuid4().hex}"
+    total = 0
+
     try:
-        now = datetime.now()
-        today = now.strftime("%Y-%m-%d")
-        now_time = now.strftime("%H:%M")
-        items = db.execute(select(Reservation).where(Reservation.status == 0)).scalars()
-        changed = False
-        for item in items:
-            if item.date < today or (item.date == today and item.end_time <= now_time):
-                item.status = 3
-                changed = True
-            if changed:
-                db.commit()
+        while True:
+            started_at = time.perf_counter()
+            candidate_ids = (
+                db.execute(
+                    select(Reservation.id)
+                    .where(
+                        Reservation.status == ReservationStatus.PENDING,
+                        or_(
+                            Reservation.date < today,
+                            and_(
+                                Reservation.date == today,
+                                Reservation.start_time <= now_time,
+                            ),
+                        ),
+                    )
+                    .limit(batch_size)
+                )
+                .scalars()
+                .all()
+            )
+            if not candidate_ids:
+                break
+
+            changed = 0
+            for reservation_id in candidate_ids:
+                result = db.execute(
+                    update(Reservation)
+                    .where(
+                        Reservation.id == reservation_id,
+                        Reservation.status == ReservationStatus.PENDING,
+                    )
+                    .values(status=ReservationStatus.EXPIRED)
+                )
+                if result.rowcount == 1:
+                    db.add(
+                        ReservationStatusHistory(
+                            reservation_id=reservation_id,
+                            from_status=ReservationStatus.PENDING,
+                            to_status=ReservationStatus.EXPIRED,
+                            action=ReservationAction.EXPIRE.value,
+                            actor_id=None,
+                            reason="待审核超时",
+                            request_id=batch_id,
+                        )
+                    )
+                    changed += 1
+
+            db.commit()
+            total += changed
+            logger.info(
+                "reservation_expired_batch",
+                extra={
+                    "request_id": batch_id,
+                    "candidate_count": len(candidate_ids),
+                    "changed_count": changed,
+                    "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+                },
+            )
+            if len(candidate_ids) < batch_size or changed == 0:
+                break
+        if total:
+            logger.info(
+                "reservation_expired",
+                extra={"request_id": batch_id, "changed_count": total},
+            )
+        return total
+    except Exception:
+        db.rollback()
+        raise
     finally:
-        db.close()
+        if owns_session:
+            db.close()
 
 
 async def run_expire_scan():
     while True:
-        expire_pending_reservations()
+        try:
+            expire_pending_reservations()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "expire_scan_failed",
+                extra={"request_id": "system:expire"},
+            )
         await asyncio.sleep(60)

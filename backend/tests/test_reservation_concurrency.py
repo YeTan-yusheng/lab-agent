@@ -13,6 +13,7 @@ from app.config import settings
 from app.core.exceptions import BusinessException
 from app.core.password import hash_password
 from app.core.reservation_rules import OCCUPYING_STATUSES
+from app.core.reservation_lifecycle import ReservationAction
 from app.models.equipment import Equipment
 from app.models.lab import Lab
 from app.models.lab_closed_day import LabClosedDay
@@ -504,6 +505,15 @@ def _attempt_cancel(session_factory, user_id, reservation_id, barrier):
         db.close()
 
 
+def _attempt_expire(session_factory, now, barrier):
+    db = session_factory()
+    try:
+        barrier.wait(timeout=10)
+        return reservation_service.expire_pending_reservations(db, now=now)
+    finally:
+        db.close()
+
+
 def _history_count(data, reservation_id):
     with data["session_factory"]() as db:
         return db.scalar(
@@ -602,3 +612,90 @@ def test_concurrent_cancels_allow_only_one_winner(concurrency_data):
     assert results.count("success") == 1, results
     assert results.count(409) == 1, results
     assert _history_count(data, reservation_id) == 1
+
+
+def test_expiry_and_audit_race_has_only_one_winner(concurrency_data):
+    data = concurrency_data
+    now = datetime.now()
+    reservation_id = _create_pending_reservation(
+        data, start_at=now - timedelta(minutes=1)
+    )
+    barrier = threading.Barrier(2)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        expire_future = executor.submit(
+            _attempt_expire,
+            data["session_factory"],
+            now,
+            barrier,
+        )
+        audit_future = executor.submit(
+            _attempt_audit,
+            data["session_factory"],
+            data["admin_id"],
+            reservation_id,
+            1,
+            barrier,
+        )
+        expired_count = expire_future.result(timeout=30)
+        audit_result = audit_future.result(timeout=30)
+
+    assert (expired_count == 1) != (audit_result == "success")
+    with data["session_factory"]() as db:
+        reservation = db.get(Reservation, reservation_id)
+        assert reservation.status in (1, 4)
+        histories = db.scalars(
+            select(ReservationStatusHistory).where(
+                ReservationStatusHistory.reservation_id == reservation_id
+            )
+        ).all()
+        assert len(histories) == 1
+        expected = (
+            ReservationAction.APPROVE
+            if reservation.status == 1
+            else ReservationAction.EXPIRE
+        )
+        assert histories[0].action == expected
+
+
+def test_expiry_and_cancel_race_has_only_one_winner(concurrency_data):
+    data = concurrency_data
+    now = datetime.now()
+    reservation_id = _create_pending_reservation(
+        data, start_at=now - timedelta(minutes=1)
+    )
+    barrier = threading.Barrier(2)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        expire_future = executor.submit(
+            _attempt_expire,
+            data["session_factory"],
+            now,
+            barrier,
+        )
+        cancel_future = executor.submit(
+            _attempt_cancel,
+            data["session_factory"],
+            data["student_id"],
+            reservation_id,
+            barrier,
+        )
+        expired_count = expire_future.result(timeout=30)
+        cancel_result = cancel_future.result(timeout=30)
+
+    assert (expired_count == 1) != (cancel_result == "success")
+    with data["session_factory"]() as db:
+        reservation = db.get(Reservation, reservation_id)
+        assert reservation.status in (3, 4)
+        histories = db.scalars(
+            select(ReservationStatusHistory).where(
+                ReservationStatusHistory.reservation_id == reservation_id
+            )
+        ).all()
+        assert len(histories) == 1
+        expected = (
+            ReservationAction.CANCEL
+            if reservation.status == 3
+            else ReservationAction.EXPIRE
+        )
+        assert histories[0].action == expected
