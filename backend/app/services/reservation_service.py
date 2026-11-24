@@ -26,6 +26,7 @@ from app.core.permissions import (
     get_role_profile,
     booking_capability,
 )
+from app.core.reservation_lifecycle import ReservationErrorCode
 from app.core.reservation_rules import (
     OCCUPYING_STATUSES,
     RuleResult,
@@ -169,14 +170,14 @@ def create_reservation(
         raise BusinessException(
             code=409,
             message="预约冲突",
-            error_code="RESERVATION_CONFLICT",
+            error_code=ReservationErrorCode.CONFLICT.value,
         )
     except Exception as exc:
         db.rollback()
         raise BusinessException(
             code=500,
             message="创建预约失败",
-            error_code="INTERNAL_ERROR",
+            error_code=ReservationErrorCode.INTERNAL_ERROR.value,
         ) from exc
 
 
