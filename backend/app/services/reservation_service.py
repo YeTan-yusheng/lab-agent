@@ -1,7 +1,7 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, select
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 import logging
 import uuid
@@ -142,24 +142,117 @@ def get_reservation_page_list(
     return PageResponse(list=result, total=total)
 
 
-def cancel_reservation(db: Session, reservation_id: int, current_user: User):
-    reservation = db.execute(
-        select(Reservation)
-        .where(Reservation.id == reservation_id)
-        .with_for_update()
-    ).scalar_one_or_none()
-    if not reservation:
-        raise BusinessException(message="预约不存在")
-    if reservation.user_id != current_user.id:
-        raise BusinessException(message="无权限", code=403)
-    if reservation.status != ReservationStatus.PENDING:
+def cancel_reservation(
+    db: Session,
+    reservation_id: int,
+    current_user: User,
+    reason: str | None = None,
+    force: bool = False,
+    request_id: str | None = None,
+    now: datetime | None = None,
+):
+    """取消预约：本人 12 小时规则、管理员显式强制取消、取消历史。"""
+    role_profile = get_role_profile(current_user)
+    is_admin = role_profile.has(Capability.audit_reservation)
+    reason = reason.strip() if reason is not None else ""
+
+    if force:
+        if not is_admin:
+            raise BusinessException(
+                code=403,
+                message="无权限强制取消预约",
+                error_code=ReservationErrorCode.FORBIDDEN.value,
+            )
+        if not reason:
+            raise BusinessException(
+                code=422,
+                message="强制取消必须填写原因",
+                error_code=ReservationErrorCode.CANCEL_REASON_REQUIRED.value,
+            )
+
+    try:
+        reservation = db.execute(
+            select(Reservation)
+            .where(Reservation.id == reservation_id)
+            .with_for_update()
+        ).scalar_one_or_none()
+        if reservation is None:
+            raise BusinessException(
+                code=404,
+                message="预约不存在",
+                error_code=ReservationErrorCode.NOT_FOUND.value,
+            )
+
+        is_owner = reservation.user_id == current_user.id
+        if not force and not is_owner:
+            raise BusinessException(
+                code=403,
+                message="只能取消本人的预约",
+                error_code=ReservationErrorCode.FORBIDDEN.value,
+            )
+
+        if reservation.status not in (
+            ReservationStatus.PENDING,
+            ReservationStatus.APPROVED,
+        ):
+            raise BusinessException(
+                code=409,
+                message="当前状态无法取消",
+                error_code=ReservationErrorCode.INVALID_STATUS_TRANSITION.value,
+            )
+
+        if not force and is_owner and reservation.status == ReservationStatus.APPROVED:
+            try:
+                start_at = datetime.strptime(
+                    f"{reservation.date} {reservation.start_time}",
+                    "%Y-%m-%d %H:%M",
+                )
+            except ValueError as exc:
+                raise BusinessException(
+                    code=500,
+                    message="预约时间数据异常",
+                    error_code=ReservationErrorCode.INTERNAL_ERROR.value,
+                ) from exc
+            if (now or datetime.now()) > start_at - timedelta(hours=12):
+                raise BusinessException(
+                    code=409,
+                    message="已通过预约需至少提前 12 小时取消",
+                    error_code=ReservationErrorCode.CANCEL_TOO_LATE.value,
+                )
+
+        from_status = reservation.status
+        reservation.cancel_reason = reason or None
+        reservation.cancelled_by = current_user.id
+        _record_status_change(
+            db,
+            reservation,
+            from_status=from_status,
+            to_status=ReservationStatus.CANCELLED,
+            action=(
+                ReservationAction.FORCE_CANCEL if force else ReservationAction.CANCEL
+            ),
+            actor_id=current_user.id,
+            request_id=request_id,
+            reason=reason or None,
+        )
+        db.commit()
+    except BusinessException:
+        db.rollback()
+        raise
+    except IntegrityError:
+        db.rollback()
         raise BusinessException(
-            message="当前状态无法取消",
             code=409,
+            message="预约状态冲突",
             error_code=ReservationErrorCode.INVALID_STATUS_TRANSITION.value,
         )
-    reservation.status = ReservationStatus.CANCELLED
-    db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise BusinessException(
+            code=500,
+            message="取消预约失败",
+            error_code=ReservationErrorCode.INTERNAL_ERROR.value,
+        ) from exc
 
 
 def audit_reservation(
@@ -180,7 +273,7 @@ def audit_reservation(
             message="无权限审核预约记录",
             error_code=ReservationErrorCode.FORBIDDEN.value,
         )
-    
+
     if status not in (ReservationStatus.APPROVED, ReservationStatus.REJECTED):
         raise BusinessException(
             code=422,
@@ -238,7 +331,9 @@ def audit_reservation(
         from_status = reservation.status
         reservation.reviewer_id = current_user.id
         reservation.reviewed_at = now or datetime.now()
-        reservation.reject_reason = reason if status == ReservationStatus.REJECTED else None
+        reservation.reject_reason = (
+            reason if status == ReservationStatus.REJECTED else None
+        )
         reservation.self_audit = is_owner and status == ReservationStatus.APPROVED
         _record_status_change(
             db,

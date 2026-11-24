@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.schemas.reservation import (
     ReservationCreateRequest,
     AuditReservationRequest,
+    CancelReservationRequest,
     AvailabilityRequest,
     DayAvailabilityRequest,
 )
@@ -75,10 +76,20 @@ def get_day_availability(
 @router.put("/{reservation_id}/cancel")
 def cancel_reservation(
     reservation_id: int,
-    current_user: User = Depends(require_booking_capability),
+    request: Request,
+    payload: CancelReservationRequest | None = None,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    reservation_service.cancel_reservation(db, reservation_id, current_user)
+    data = payload or CancelReservationRequest()
+    reservation_service.cancel_reservation(
+        db,
+        reservation_id,
+        current_user,
+        reason=data.reason,
+        force=data.force,
+        request_id=request.state.request_id,
+    )
     return Response.success()
 
 

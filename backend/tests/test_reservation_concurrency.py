@@ -2,7 +2,7 @@ import os
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine, delete, event, func, inspect, select
@@ -451,14 +451,16 @@ def test_failed_commit_leaves_no_reservation(concurrency_data, monkeypatch):
     assert _reservation_count(data, lab_id=data["lab_a_id"]) == 1
 
 
-def _create_pending_reservation(data, *, user_id=None):
+def _create_pending_reservation(data, *, user_id=None, start_at=None):
+    start_at = start_at or datetime(2099, 1, 1, 10, 0)
+    end_at = start_at + timedelta(hours=1)
     with data["session_factory"]() as db:
         reservation = Reservation(
             user_id=user_id or data["student_id"],
             lab_id=data["lab_a_id"],
-            date=BOOKING_DATE,
-            start_time="10:00",
-            end_time="11:00",
+            date=start_at.date().isoformat(),
+            start_time=start_at.strftime("%H:%M"),
+            end_time=end_at.strftime("%H:%M"),
             status=0,
         )
         db.add(reservation)
@@ -539,7 +541,10 @@ def test_concurrent_audits_allow_only_one_winner(concurrency_data):
 
 def test_audit_and_cancel_race_has_only_one_winner(concurrency_data):
     data = concurrency_data
-    reservation_id = _create_pending_reservation(data)
+    # 距开始 <12h：审核先到则取消超时，取消先到则审核 409
+    reservation_id = _create_pending_reservation(
+        data, start_at=datetime.now() + timedelta(hours=1)
+    )
     barrier = threading.Barrier(2)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -573,7 +578,27 @@ def test_audit_and_cancel_race_has_only_one_winner(concurrency_data):
                 ReservationStatusHistory.reservation_id == reservation_id
             )
         )
-        if reservation.status == 1:
-            assert history_count == 1
-        else:
-            assert history_count == 0
+        assert history_count == 1
+
+
+def test_concurrent_cancels_allow_only_one_winner(concurrency_data):
+    data = concurrency_data
+    reservation_id = _create_pending_reservation(data)
+    barrier = threading.Barrier(2)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(
+                _attempt_cancel,
+                data["session_factory"],
+                data["student_id"],
+                reservation_id,
+                barrier,
+            )
+            for _ in range(2)
+        ]
+        results = [future.result(timeout=30) for future in futures]
+
+    assert results.count("success") == 1, results
+    assert results.count(409) == 1, results
+    assert _history_count(data, reservation_id) == 1

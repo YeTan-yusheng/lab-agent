@@ -62,6 +62,11 @@ class AuditReservationRequest(BaseModel):
     self_audit: bool = Field(default=False, description="本人审核时是否显式自审")
 
 
+class CancelReservationRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=255, description="取消原因")
+    force: bool = Field(default=False, description="管理员强制取消")
+
+
 class ConflictInfo(BaseModel):
     reservation_id: int
     type: str  # lab或equipment
