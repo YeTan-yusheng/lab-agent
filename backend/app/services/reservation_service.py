@@ -108,6 +108,20 @@ def _minutes_to_time(value: int) -> str:
     return f"{value // 60:02d}:{value % 60:02d}"
 
 
+def _reservation_start_at(reservation: Reservation) -> datetime:
+    try:
+        return datetime.strptime(
+            f"{reservation.date} {reservation.start_time}",
+            "%Y-%m-%d %H:%M",
+        )
+    except ValueError as exc:
+        raise BusinessException(
+            code=500,
+            message="预约时间数据异常",
+            error_code=ReservationErrorCode.INTERNAL_ERROR.value,
+        ) from exc
+
+
 def _normalize_date_filter(value: str | None, field: str) -> str | None:
     """将日期字符串规范化为 YYYY-MM-DD 格式"""
     if value is None:
@@ -131,8 +145,9 @@ def get_reservation_page_list(
     lab_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    mine: bool = False,
 ):
-    """查询预约记录，按角色限制范围并支持筛选。"""
+    """查询预约记录；mine=True 时强制只看本人，否则审核人可看全部。"""
     role_profile = get_role_profile(current_user)
     date_from = _normalize_date_filter(date_from, "date_from")
     date_to = _normalize_date_filter(date_to, "date_to")
@@ -144,15 +159,14 @@ def get_reservation_page_list(
         )
 
     stmt = select(Reservation)
-    if role_profile.has(Capability.audit_reservation):
-        if status is None:
-            stmt = stmt.where(
-                Reservation.status.notin_(
-                    (ReservationStatus.CANCELLED, ReservationStatus.EXPIRED)
-                )
-            )
-    else:
+    if mine or not role_profile.has(Capability.audit_reservation):
         stmt = stmt.where(Reservation.user_id == current_user.id)
+    elif status is None:
+        stmt = stmt.where(
+            Reservation.status.notin_(
+                (ReservationStatus.CANCELLED, ReservationStatus.EXPIRED)
+            )
+        )
 
     if status is not None:
         stmt = stmt.where(Reservation.status == status)
@@ -297,24 +311,25 @@ def cancel_reservation(
                 error_code=ReservationErrorCode.INVALID_STATUS_TRANSITION.value,
             )
 
-        if not force and is_owner and reservation.status == ReservationStatus.APPROVED:
-            try:
-                start_at = datetime.strptime(
-                    f"{reservation.date} {reservation.start_time}",
-                    "%Y-%m-%d %H:%M",
-                )
-            except ValueError as exc:
-                raise BusinessException(
-                    code=500,
-                    message="预约时间数据异常",
-                    error_code=ReservationErrorCode.INTERNAL_ERROR.value,
-                ) from exc
-            if (now or datetime.now()) > start_at - timedelta(hours=12):
-                raise BusinessException(
-                    code=409,
-                    message="已通过预约需至少提前 12 小时取消",
-                    error_code=ReservationErrorCode.CANCEL_TOO_LATE.value,
-                )
+        current_time = now or datetime.now()
+        start_at = _reservation_start_at(reservation)
+        if force and start_at <= current_time:
+            raise BusinessException(
+                code=409,
+                message="预约已开始，无法强制取消",
+                error_code=ReservationErrorCode.CANCEL_TOO_LATE.value,
+            )
+        if (
+            not force
+            and is_owner
+            and reservation.status == ReservationStatus.APPROVED
+            and current_time > start_at - timedelta(hours=12)
+        ):
+            raise BusinessException(
+                code=409,
+                message="已通过预约需至少提前 12 小时取消",
+                error_code=ReservationErrorCode.CANCEL_TOO_LATE.value,
+            )
 
         from_status = reservation.status
         reservation.cancel_reason = reason or None

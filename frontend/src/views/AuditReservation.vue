@@ -76,14 +76,14 @@
             <el-tag :type="statusTagType(row.status)">{{ statusText(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="3210">
+        <el-table-column label="操作" min-width="320">
           <template #default="{ row }">
             <template v-if="row.status === 0">
               <el-button type="success" text bg @click="handleAudit(row, 1)">通过</el-button>
               <el-button type="danger" text bg @click="handleAudit(row, 2)">拒绝</el-button>
             </template>
             <el-button
-              v-if="row.status === 0 || row.status === 1"
+              v-if="canForceCancel(row)"
               type="warning"
               text
               bg
@@ -207,6 +207,7 @@ import { useUser } from '@/utils/user'
 import {
   actionTagType,
   actionText,
+  canForceCancel,
   formatDateTime,
   statusTagType,
   statusText

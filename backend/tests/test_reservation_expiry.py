@@ -73,6 +73,9 @@ def users(db):
         "student": _create_user(db, "expiry_student", ["student"]),
         "teacher": _create_user(db, "expiry_teacher", ["teacher"]),
         "admin": _create_user(db, "expiry_admin", ["admin"]),
+        "teacher_admin": _create_user(
+            db, "expiry_teacher_admin", ["teacher", "admin"]
+        ),
     }
 
 
@@ -374,6 +377,25 @@ def test_list_owner_sees_all_own_and_filters(db, users, lab):
     assert [item.id for item in filtered.list] == [other.id]
 
 
+def test_my_list_for_teacher_admin_only_returns_own(db, users, lab):
+    own = _create_reservation(
+        db, users["teacher_admin"].id, lab.id, date_value="2026-11-25"
+    )
+    other = _create_reservation(
+        db, users["student"].id, lab.id, date_value="2026-11-25"
+    )
+
+    mine_page = reservation_service.get_reservation_page_list(
+        db, users["teacher_admin"], 1, 10, mine=True
+    )
+    assert [item.id for item in mine_page.list] == [own.id]
+
+    audit_page = reservation_service.get_reservation_page_list(
+        db, users["teacher_admin"], 1, 10
+    )
+    assert {item.id for item in audit_page.list} == {own.id, other.id}
+
+
 def test_list_invalid_date_filters_raise_422(db, users):
     with pytest.raises(BusinessException) as exc_info:
         reservation_service.get_reservation_page_list(
@@ -520,6 +542,23 @@ def test_list_api_filters_and_pending_count(db, users, lab, client):
     )
     assert forbidden.status_code == 403
     assert forbidden.json()["error_code"] == "RESERVATION_FORBIDDEN"
+
+
+def test_my_list_api_for_teacher_admin_only_returns_own(db, users, lab, client):
+    own = _create_reservation(
+        db, users["teacher_admin"].id, lab.id, date_value="2026-11-25"
+    )
+    _create_reservation(
+        db, users["student"].id, lab.id, date_value="2026-11-25"
+    )
+
+    response = client.get(
+        "/api/reservation/list?mine=true",
+        headers=_login(client, "expiry_teacher_admin"),
+    )
+
+    assert response.status_code == 200
+    assert [row["id"] for row in response.json()["data"]["list"]] == [own.id]
 
 
 def test_history_api_owner_and_non_owner(db, users, lab, client):

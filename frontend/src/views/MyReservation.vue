@@ -132,7 +132,8 @@ const historyList = ref([])
 const params = reactive({
   page: 1,
   page_size: 10,
-  status: null
+  status: null,
+  mine: true
 })
 
 const reasonText = (row) => {

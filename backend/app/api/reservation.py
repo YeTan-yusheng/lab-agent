@@ -31,6 +31,7 @@ def get_reservation_page_list(
     lab_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    mine: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -43,6 +44,7 @@ def get_reservation_page_list(
         lab_id,
         date_from,
         date_to,
+        mine,
     )
     return Response.success(data=res)
 

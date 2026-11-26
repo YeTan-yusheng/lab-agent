@@ -3,6 +3,7 @@ import {
   RESERVATION_STATUS,
   actionTagType,
   actionText,
+  canForceCancel,
   canOwnerCancel,
   cancelHint,
   formatDateTime,
@@ -92,6 +93,25 @@ describe('reservationStatus', () => {
     expect(
       cancelHint(reservation({ status: RESERVATION_STATUS.EXPIRED }), now)
     ).toContain('不可取消')
+  })
+
+  it('only allows force cancel before the reservation starts', () => {
+    expect(canForceCancel(reservation(), now)).toBe(true)
+    expect(
+      canForceCancel(
+        reservation({ status: RESERVATION_STATUS.PENDING }),
+        now
+      )
+    ).toBe(true)
+    expect(
+      canForceCancel(
+        reservation({ start_time: '09:00', end_time: '10:00' }),
+        now
+      )
+    ).toBe(false)
+    expect(
+      canForceCancel(reservation({ status: RESERVATION_STATUS.EXPIRED }), now)
+    ).toBe(false)
   })
 
   it('maps history actions and formats timestamps', () => {

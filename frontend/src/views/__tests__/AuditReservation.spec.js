@@ -85,6 +85,14 @@ const expired = {
   status: 4,
   cancel_reason: '待审核超时'
 }
+const started = {
+  ...baseRow,
+  id: 5,
+  user_id: 1,
+  user_name: '学生一',
+  status: 0,
+  date: '2020-01-01'
+}
 
 async function mountPage() {
   const wrapper = mount(AuditReservation, {
@@ -105,7 +113,10 @@ describe('AuditReservation', () => {
   beforeEach(() => {
     mocks.getReservationPageList.mockResolvedValue({
       code: 200,
-      data: { list: [otherPending, ownPending, approved, expired], total: 4 }
+      data: {
+        list: [otherPending, ownPending, approved, expired, started],
+        total: 5
+      }
     })
     mocks.getLabPageList.mockResolvedValue({
       code: 200,
@@ -139,9 +150,12 @@ describe('AuditReservation', () => {
     expect(mocks.getReservationPageList).toHaveBeenCalledWith(
       expect.objectContaining({ status: 0 })
     )
-    expect(wrapper.text()).toContain('待审核 2')
+    expect(wrapper.text()).toContain('待审核数量：2')
     expect(wrapper.text()).toContain('已过期')
     expect(wrapper.text()).toContain('取消：待审核超时')
+
+    // 已开始的待审核预约不再显示强制取消
+    expect(buttonsByText(wrapper, '强制取消')).toHaveLength(3)
   })
 
   it('requires self-audit when approving own reservation', async () => {

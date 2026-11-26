@@ -89,6 +89,9 @@ describe('MyReservation', () => {
   it('shows status 4, reasons and cancellation availability', async () => {
     const wrapper = await mountPage()
 
+    expect(mocks.getReservationPageList).toHaveBeenCalledWith(
+      expect.objectContaining({ mine: true })
+    )
     expect(wrapper.text()).toContain('已过期')
     expect(wrapper.text()).toContain('取消：未及时审核')
 

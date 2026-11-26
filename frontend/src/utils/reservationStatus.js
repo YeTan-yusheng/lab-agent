@@ -80,6 +80,17 @@ export function canOwnerCancel(row, now = new Date()) {
   return startAt.getTime() - now.getTime() >= 12 * 60 * 60 * 1000 // 大于12小时可以取消
 }
 
+export function canForceCancel(row, now = new Date()) {
+  // 已开始的预约不再允许管理员强制取消
+  const status = Number(row?.status)
+  if (status !== RESERVATION_STATUS.PENDING && status !== RESERVATION_STATUS.APPROVED) {
+    return false
+  }
+  const startAt = parseStartAt(row)
+  if (!startAt) return false
+  return startAt.getTime() > now.getTime()
+}
+
 export function cancelHint(row, now = new Date()) {
   // 获取取消预约的提示信息
   const status = Number(row?.status)

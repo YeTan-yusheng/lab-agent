@@ -286,6 +286,7 @@ def test_admin_cannot_cancel_others_without_force(db, users):
 
 
 def test_admin_force_cancels_other_reservation(db, users):
+    now = datetime(2026, 11, 24, 10, 0)
     reservation = _create_reservation(
         db, users["student"].id, datetime(2026, 11, 25, 10, 0)
     )
@@ -297,6 +298,7 @@ def test_admin_force_cancels_other_reservation(db, users):
         reason="实验室临时关闭",
         force=True,
         request_id="req-force",
+        now=now,
     )
     db.refresh(reservation)
 
@@ -417,7 +419,7 @@ def test_admin_force_cancel_api(db, users, client):
     reservation = _create_reservation(
         db,
         users["student"].id,
-        datetime(2026, 11, 25, 10, 0),
+        datetime(2099, 1, 1, 10, 0),
         status=ReservationStatus.APPROVED,
     )
     headers = _login(client, "cancel_admin")
@@ -436,6 +438,57 @@ def test_admin_force_cancel_api(db, users, client):
     assert reservation.cancel_reason == "设备故障"
     assert reservation.cancelled_by == users["admin"].id
     assert _history(db, reservation.id)[0].request_id == "req-api-force"
+
+
+def test_force_cancel_started_reservation_is_rejected(db, users):
+    now = datetime(2026, 11, 24, 10, 0)
+    reservation = _create_reservation(
+        db,
+        users["student"].id,
+        now - timedelta(minutes=1),
+        status=ReservationStatus.APPROVED,
+    )
+
+    with pytest.raises(BusinessException) as exc_info:
+        reservation_service.cancel_reservation(
+            db,
+            reservation.id,
+            users["admin"],
+            reason="设备故障",
+            force=True,
+            now=now,
+        )
+
+    assert exc_info.value.code == 409
+    assert exc_info.value.error_code == ReservationErrorCode.CANCEL_TOO_LATE
+    db.refresh(reservation)
+    assert reservation.status == ReservationStatus.APPROVED
+    assert _history(db, reservation.id) == []
+
+
+def test_force_cancel_started_pending_is_rejected(db, users):
+    now = datetime(2026, 11, 24, 10, 0)
+    reservation = _create_reservation(
+        db,
+        users["student"].id,
+        now - timedelta(minutes=1),
+        status=ReservationStatus.PENDING,
+    )
+
+    with pytest.raises(BusinessException) as exc_info:
+        reservation_service.cancel_reservation(
+            db,
+            reservation.id,
+            users["admin"],
+            reason="设备故障",
+            force=True,
+            now=now,
+        )
+
+    assert exc_info.value.code == 409
+    assert exc_info.value.error_code == ReservationErrorCode.CANCEL_TOO_LATE
+    db.refresh(reservation)
+    assert reservation.status == ReservationStatus.PENDING
 
 
 def test_cancel_api_too_late(db, users, client):
