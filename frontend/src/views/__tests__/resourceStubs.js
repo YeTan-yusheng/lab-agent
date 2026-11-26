@@ -87,6 +87,27 @@ export const resourceStubs = {
       '<button type="button" :disabled="disabled" @click="$emit(\'click\')"><slot /></button>'
   },
   'el-empty': { template: '<div class="empty">暂无数据</div>' },
+  'el-drawer': {
+    props: ['modelValue', 'title'],
+    template:
+      '<div v-if="modelValue" class="drawer"><h2>{{ title }}</h2><slot /></div>'
+  },
+  'el-timeline': { template: '<div class="timeline"><slot /></div>' },
+  'el-timeline-item': {
+    props: ['timestamp', 'type'],
+    template:
+      '<div class="timeline-item"><span>{{ timestamp }}</span><slot /></div>'
+  },
+  'el-switch': {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<input type="checkbox" :checked="modelValue" @change="$emit(\'update:modelValue\', $event.target.checked)" />'
+  },
+  'el-badge': {
+    props: ['value', 'max'],
+    template: '<span class="badge"><slot /><span>{{ value }}</span></span>'
+  },
   'el-icon': { template: '<span><slot /></span>' }
 }
 
