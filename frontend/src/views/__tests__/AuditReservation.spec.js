@@ -144,11 +144,11 @@ describe('AuditReservation', () => {
     })
   })
 
-  it('loads pending by default and shows the pending badge', async () => {
+  it('loads the list with default filters and shows the pending badge', async () => {
     const wrapper = await mountPage()
 
     expect(mocks.getReservationPageList).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 0 })
+      expect.objectContaining({ status: null })
     )
     expect(wrapper.text()).toContain('待审核数量：2')
     expect(wrapper.text()).toContain('已过期')
