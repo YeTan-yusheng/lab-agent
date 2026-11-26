@@ -35,11 +35,19 @@
       </el-header>
 
       <el-container>
-        <el-aside width="220px">
+        <el-aside width="200px">
           <el-menu router :default-active="route.path">
             <el-menu-item v-for="item in visibleMenus" :key="item.path" :index="item.path">
               <el-icon><component :is="item.icon" /></el-icon>
-              <span>{{ item.label }}</span>
+              <el-badge
+                v-if="item.path === '/manager/audit-reservation' && pendingCount > 0"
+                :value="pendingCount"
+                :max="99"
+                :offset="[15, 28]"
+              >
+                <span>{{ item.label }}</span>
+              </el-badge>
+              <span v-else>{{ item.label }}</span>
             </el-menu-item>
           </el-menu>
         </el-aside>
@@ -66,10 +74,12 @@ import {
 import router from '@/router'
 import { useUser } from '@/utils/user'
 import { Capability } from '@/utils/permissions'
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAuditPendingCount } from '@/composables/useAuditPendingCount'
 
 const { userInfo, clearUser, can, hasAny } = useUser()
+const { pendingCount, refresh: refreshPendingCount } = useAuditPendingCount()
 const route = useRoute()
 
 const handleCommand = (command) => {
@@ -131,4 +141,8 @@ const visibleMenus = computed(() =>
     return true
   })
 )
+
+onMounted(() => {
+  refreshPendingCount()
+})
 </script>

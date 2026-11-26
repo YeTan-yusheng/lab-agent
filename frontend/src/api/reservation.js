@@ -37,18 +37,36 @@ export function getReservationPageList(params) {
 }
 
 // 取消预约
-export function cancelReservationApi(id) {
+export function cancelReservationApi(id, data = {}) {
   return request({
     url: `/api/reservation/${id}/cancel`,
-    method: 'put'
+    method: 'put',
+    data
   })
 }
 
 // 审核预约
-export function auditReservationApi(id, status) {
+export function auditReservationApi(id, data) {
+  const payload = typeof data === 'number' ? { status: data } : data
   return request({
     url: `/api/reservation/${id}/audit`,
     method: 'put',
-    data: { status }
+    data: payload
+  })
+}
+
+// 预约状态历史
+export function getReservationHistoryApi(id) {
+  return request({
+    url: `/api/reservation/${id}/history`,
+    method: 'get'
+  })
+}
+
+// 待审核数量
+export function getAuditPendingCountApi() {
+  return request({
+    url: '/api/reservation/audit/pending-count',
+    method: 'get'
   })
 }
