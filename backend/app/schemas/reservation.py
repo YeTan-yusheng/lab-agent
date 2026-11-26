@@ -51,6 +51,11 @@ class ReservationResponse(BaseModel):
     end_time: str
     remark: str | None = None
     status: int
+    reviewer_id: int | None = None
+    reviewed_at: datetime | None = None
+    reject_reason: str | None = None
+    cancel_reason: str | None = None
+    self_audit: bool = False
     model_config = ConfigDict(from_attributes=True)
 
 
