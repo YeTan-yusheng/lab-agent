@@ -41,6 +41,15 @@ EXTRA_FIELDS = (
     "tool_name",
     "error_fields",
     "slow",
+    "notification_id",
+    "outbox_id",
+    "candidate_count",
+    "changed_count",
+    "failed_count",
+    "to_domain",
+    "subject_len",
+    "attempts",
+    "error_type",
 )
 
 request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")

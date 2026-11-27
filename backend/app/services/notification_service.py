@@ -4,6 +4,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.exceptions import BusinessException
 from app.core.notification_lifecycle import NotificationErrorCode, NotificationType
 from app.core.reservation_lifecycle import ReservationAction
@@ -100,6 +101,7 @@ def notify_reservation_event(
                 to_email=recipient.email,
                 subject=title,
                 body=content,
+                max_attempts=settings.email_max_attempts,
                 dedupe_key=email_key,
             )
             if _insert_with_savepoint(db, outbox, email_key):

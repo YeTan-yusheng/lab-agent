@@ -6,11 +6,13 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api import app as api_router
-from app.config import UPLOAD_DIR
+from app.config import UPLOAD_DIR, settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
 from app.services import reservation_service
+from app.services.email_outbox_service import run_email_outbox_scan
+from app.services.email_sender import build_email_sender
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -19,14 +21,21 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("app_started")
-    task = asyncio.create_task(reservation_service.run_expire_scan())
+    email_sender = (
+        build_email_sender(settings) if settings.email_worker_enabled else None
+    )
+    tasks = [asyncio.create_task(reservation_service.run_expire_scan())]
+    if email_sender is not None:
+        tasks.append(asyncio.create_task(run_email_outbox_scan(email_sender)))
     try:
         yield
     finally:
-        task.cancel()
-        # 捕获并忽略取消异常
-        with suppress(asyncio.CancelledError):
-            await task
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            # 捕获并忽略取消异常
+            with suppress(asyncio.CancelledError):
+                await task
         logger.info("app_stopped")
 
 

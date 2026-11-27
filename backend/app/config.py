@@ -29,6 +29,21 @@ class Settings(BaseSettings):
     log_max_bytes: int = 10 * 1024 * 1024
     log_backup_count: int = 5
     slow_request_ms: int = 2000
+    # 邮件配置
+    email_backend: str = "console"
+    email_from: str = "lab-agent@lab.local"
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_auth_code: str | None = None
+    smtp_use_tls: bool = True
+    smtp_timeout_seconds: int = 10
+    email_worker_enabled: bool = True
+    email_worker_interval_seconds: int = 30
+    email_batch_size: int = 50
+    email_max_attempts: int = 5
+    email_retry_delays: str = "60,300,900,3600,21600"
+    email_sending_timeout_seconds: int = 600
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
