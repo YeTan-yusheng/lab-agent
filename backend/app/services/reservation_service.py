@@ -2,6 +2,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import and_, func, or_, select, update
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 import asyncio
 import logging
 import time
@@ -46,6 +47,7 @@ from app.core.reservation_rules import (
     validate_time,
 )
 from app.models.lab_closed_day import LabClosedDay
+from app.services.notification_service import notify_reservation_event
 
 TIME_INTERVAL = 10  # 预约时间间隔，单位分钟
 
@@ -78,6 +80,14 @@ def _record_status_change(
         request_id=request_id,
     )
     db.add(history)
+    notify_reservation_event(
+        db,
+        reservation=reservation,
+        action=action,
+        actor_id=actor_id,
+        reason=reason,
+        request_id=request_id,
+    )
     logger.info(
         "reservation_status_changed",
         extra={
@@ -788,33 +798,36 @@ def expire_pending_reservations(
     try:
         while True:
             started_at = time.perf_counter()
-            candidate_ids = (
-                db.execute(
-                    select(Reservation.id)
-                    .where(
-                        Reservation.status == ReservationStatus.PENDING,
-                        or_(
-                            Reservation.date < today,
-                            and_(
-                                Reservation.date == today,
-                                Reservation.start_time <= now_time,
-                            ),
-                        ),
-                    )
-                    .limit(batch_size)
+            candidates = db.execute(
+                select(
+                    Reservation.id,
+                    Reservation.user_id,
+                    Reservation.lab_id,
+                    Reservation.date,
+                    Reservation.start_time,
+                    Reservation.end_time,
                 )
-                .scalars()
-                .all()
-            )
-            if not candidate_ids:
+                .where(
+                    Reservation.status == ReservationStatus.PENDING,
+                    or_(
+                        Reservation.date < today,
+                        and_(
+                            Reservation.date == today,
+                            Reservation.start_time <= now_time,
+                        ),
+                    ),
+                )
+                .limit(batch_size)
+            ).all()
+            if not candidates:
                 break
 
             changed = 0
-            for reservation_id in candidate_ids:
+            for candidate in candidates:
                 result = db.execute(
                     update(Reservation)
                     .where(
-                        Reservation.id == reservation_id,
+                        Reservation.id == candidate.id,
                         Reservation.status == ReservationStatus.PENDING,
                     )
                     .values(status=ReservationStatus.EXPIRED)
@@ -822,7 +835,7 @@ def expire_pending_reservations(
                 if result.rowcount == 1:
                     db.add(
                         ReservationStatusHistory(
-                            reservation_id=reservation_id,
+                            reservation_id=candidate.id,
                             from_status=ReservationStatus.PENDING,
                             to_status=ReservationStatus.EXPIRED,
                             action=ReservationAction.EXPIRE.value,
@@ -830,6 +843,21 @@ def expire_pending_reservations(
                             reason="待审核超时",
                             request_id=batch_id,
                         )
+                    )
+                    notify_reservation_event(
+                        db,
+                        reservation=SimpleNamespace(
+                            id=candidate.id,
+                            user_id=candidate.user_id,
+                            lab_id=candidate.lab_id,
+                            date=candidate.date,
+                            start_time=candidate.start_time,
+                            end_time=candidate.end_time,
+                        ),
+                        action=ReservationAction.EXPIRE,
+                        actor_id=None,
+                        reason="待审核超时",
+                        request_id=batch_id,
                     )
                     changed += 1
 
@@ -839,12 +867,12 @@ def expire_pending_reservations(
                 "reservation_expired_batch",
                 extra={
                     "request_id": batch_id,
-                    "candidate_count": len(candidate_ids),
+                    "candidate_count": len(candidates),
                     "changed_count": changed,
                     "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
                 },
             )
-            if len(candidate_ids) < batch_size or changed == 0:
+            if len(candidates) < batch_size or changed == 0:
                 break
         if total:
             logger.info(

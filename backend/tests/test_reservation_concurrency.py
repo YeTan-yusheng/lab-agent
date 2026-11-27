@@ -15,8 +15,10 @@ from app.core.password import hash_password
 from app.core.reservation_rules import OCCUPYING_STATUSES
 from app.core.reservation_lifecycle import ReservationAction
 from app.models.equipment import Equipment
+from app.models.email_outbox import EmailOutbox
 from app.models.lab import Lab
 from app.models.lab_closed_day import LabClosedDay
+from app.models.notification import Notification
 from app.models.reservation import Reservation
 from app.models.reservation_status_history import ReservationStatusHistory
 from app.models.user import User, UserRoles
@@ -155,6 +157,17 @@ def concurrency_data(mysql_engine):
         user_ids = [data["teacher_id"], data["student_id"], data["admin_id"]]
         db.execute(delete(LabClosedDay).where(LabClosedDay.lab_id.in_(lab_ids)))
         reservation_ids = select(Reservation.id).where(Reservation.lab_id.in_(lab_ids))
+        notification_ids = select(Notification.id).where(
+            Notification.reservation_id.in_(reservation_ids)
+        )
+        db.execute(
+            delete(EmailOutbox).where(
+                EmailOutbox.notification_id.in_(notification_ids)
+            )
+        )
+        db.execute(
+            delete(Notification).where(Notification.reservation_id.in_(reservation_ids))
+        )
         db.execute(
             delete(ReservationStatusHistory).where(
                 ReservationStatusHistory.reservation_id.in_(reservation_ids)
