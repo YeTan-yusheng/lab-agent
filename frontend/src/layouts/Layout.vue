@@ -16,7 +16,17 @@
           <div style="margin-left: 5px">智能实验室预约系统</div>
         </div>
 
-        <div>
+        <div style="display: flex; align-items: center; gap: 18px">
+          <div
+            title="消息中心"
+            style="cursor: pointer; display: flex; align-items: center"
+            @click="goNotifications"
+          >
+            <el-badge :value="unreadCount" :max="99" :hidden="unreadCount === 0">
+              <el-icon :size="20"><Bell /></el-icon>
+            </el-badge>
+          </div>
+
           <el-dropdown @command="handleCommand">
             <div style="display: flex; align-items: center; cursor: pointer">
               <img :src="userInfo?.avatar" alt="" style="width: 30px; border-radius: 50%" />
@@ -69,17 +79,20 @@ import {
   OfficeBuilding,
   Tickets,
   Checked,
-  ChatDotRound
+  ChatDotRound,
+  Bell
 } from '@element-plus/icons-vue'
 import router from '@/router'
 import { useUser } from '@/utils/user'
 import { Capability } from '@/utils/permissions'
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuditPendingCount } from '@/composables/useAuditPendingCount'
+import { useNotificationCount } from '@/composables/useNotificationCount'
 
 const { userInfo, clearUser, can, hasAny } = useUser()
 const { pendingCount, refresh: refreshPendingCount } = useAuditPendingCount()
+const { unreadCount, startPolling, stopPolling } = useNotificationCount()
 const route = useRoute()
 
 const handleCommand = (command) => {
@@ -91,6 +104,10 @@ const handleCommand = (command) => {
   } else if (command == 'password') {
     router.push('/manager/password')
   }
+}
+
+const goNotifications = () => {
+  router.push('/manager/notifications')
 }
 
 const menus = [
@@ -144,5 +161,10 @@ const visibleMenus = computed(() =>
 
 onMounted(() => {
   refreshPendingCount()
+  startPolling()
+})
+
+onUnmounted(() => {
+  stopPolling()
 })
 </script>

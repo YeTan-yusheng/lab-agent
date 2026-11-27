@@ -84,6 +84,11 @@ const router = createRouter({
           meta: {
             requiredCapabilities: [Capability.USE_AI]
           }
+        },
+        {
+          path: 'notifications',
+          name: 'Notification',
+          component: () => import('@/views/Notification.vue')
         }
       ]
     },

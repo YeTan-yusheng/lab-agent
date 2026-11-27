@@ -1,14 +1,18 @@
 import logging
-from sqlalchemy import select
+from datetime import datetime
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.notification_lifecycle import NotificationType
+from app.core.exceptions import BusinessException
+from app.core.notification_lifecycle import NotificationErrorCode, NotificationType
 from app.core.reservation_lifecycle import ReservationAction
+from app.core.response import PageResponse
 from app.models.email_outbox import EmailOutbox
 from app.models.lab import Lab
 from app.models.notification import Notification
 from app.models.user import User, UserRoles
+from app.schemas.notification import NotificationItem
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +185,80 @@ def _dedupe_keys(reservation_id: int, action: ReservationAction, user_id: int):
 def _exists(db: Session, model: Notification | EmailOutbox, dedupe_key: str) -> bool:
     """检查指定的幂等键是否已存在于数据库中"""
     return db.scalar(select(model.id).where(model.dedupe_key == dedupe_key)) is not None
+
+
+def get_notification_page_list(
+    db: Session,
+    current_user: User,
+    *,
+    page: int,
+    page_size: int,
+    is_read: bool | None = None,
+):
+    """查询当前用户的站内信分页列表"""
+    stmt = select(Notification).where(Notification.user_id == current_user.id)
+    if is_read is not None:
+        stmt = stmt.where(Notification.is_read == is_read)
+
+    total = db.scalar(select(func.count()).select_from(stmt.subquery()))
+    items = db.scalars(
+        stmt.order_by(Notification.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return PageResponse(
+        list=[NotificationItem.model_validate(item) for item in items],
+        total=total or 0,
+    )
+
+
+def get_unread_count(db: Session, current_user: User) -> int:
+    """统计当前用户的未读站内信数量"""
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(Notification)
+            .where(
+                Notification.user_id == current_user.id,
+                Notification.is_read.is_(False),
+            )
+        )
+        or 0
+    )
+
+
+def mark_notification_read(
+    db: Session,
+    current_user: User,
+    notification_id: int,
+) -> None:
+    """将当前用户的一条站内信标记为已读"""
+    notification = db.get(Notification, notification_id)
+    if notification is None or notification.user_id != current_user.id:
+        raise BusinessException(
+            code=404,
+            message="通知不存在",
+            error_code=NotificationErrorCode.NOT_FOUND.value,
+        )
+    if notification.is_read:
+        return
+    notification.is_read = True
+    notification.read_at = datetime.now()
+    db.commit()
+
+
+def mark_all_notifications_read(db: Session, current_user: User) -> int:
+    """将当前用户的全部未读站内信标记为已读"""
+    result = db.execute(
+        update(Notification)
+        .where(
+            Notification.user_id == current_user.id,
+            Notification.is_read.is_(False),
+        )
+        .values(is_read=True, read_at=datetime.now())
+    )
+    db.commit()
+    return result.rowcount or 0
 
 
 def _insert_with_savepoint(db: Session, obj, dedupe_key: str) -> bool:
