@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 
@@ -94,6 +94,32 @@ def get_audit_pending_count(
     return Response.success(data={"count": count})
 
 
+@router.get("/audit/history")
+def get_audit_history(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=50),
+    reservation_id: int | None = None,
+    user_id: int | None = None,
+    action: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    res = reservation_service.get_audit_history_page(
+        db,
+        current_user,
+        page=page,
+        page_size=page_size,
+        reservation_id=reservation_id,
+        user_id=user_id,
+        action=action,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    return Response.success(data=res)
+
+
 @router.get("/{reservation_id}/history")
 def get_reservation_history(
     reservation_id: int,
@@ -103,9 +129,7 @@ def get_reservation_history(
     history = reservation_service.get_reservation_history(
         db, current_user, reservation_id
     )
-    return Response.success(
-        data=[item.model_dump(mode="json") for item in history]
-    )
+    return Response.success(data=[item.model_dump(mode="json") for item in history])
 
 
 @router.put("/{reservation_id}/cancel")

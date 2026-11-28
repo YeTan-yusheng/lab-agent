@@ -132,6 +132,12 @@ const menus = [
     capability: Capability.AUDIT_RESERVATION
   },
   {
+    label: '预约审计',
+    path: '/manager/reservation-audit',
+    icon: Checked,
+    capability: Capability.AUDIT_RESERVATION
+  },
+  {
     label: '实验室管理',
     path: '/manager/lab',
     icon: House,

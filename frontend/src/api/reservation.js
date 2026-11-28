@@ -70,3 +70,12 @@ export function getAuditPendingCountApi() {
     method: 'get'
   })
 }
+
+// 跨预约状态历史
+export function getAuditHistoryApi(params) {
+  return request({
+    url: '/api/reservation/audit/history',
+    method: 'get',
+    params
+  })
+}

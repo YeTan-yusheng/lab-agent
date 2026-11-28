@@ -83,6 +83,15 @@ class ReservationHistoryItem(BaseModel):
     create_time: datetime
 
 
+class ReservationAuditHistoryItem(ReservationHistoryItem):
+    reservation_id: int
+    owner_name: str
+    lab_name: str
+    date: str
+    start_time: str
+    end_time: str
+
+
 class ConflictInfo(BaseModel):
     reservation_id: int
     type: str  # lab或equipment

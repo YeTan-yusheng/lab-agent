@@ -26,6 +26,7 @@ from app.schemas.reservation import (
     DayAvailabilityResponse,
     TimeRange,
     ReservationHistoryItem,
+    ReservationAuditHistoryItem,
 )
 from app.core.permissions import (
     Capability,
@@ -260,6 +261,118 @@ def get_reservation_history(
         )
         for item in items
     ]
+
+
+def get_audit_history_page(
+    db: Session,
+    current_user: User,
+    *,
+    page: int,
+    page_size: int,
+    reservation_id: int | None = None,
+    user_id: int | None = None,
+    action: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+):
+    """按审核人视角跨预约查询状态历史。"""
+    role_profile = get_role_profile(current_user)
+    if not role_profile.has(Capability.audit_reservation):
+        raise BusinessException(
+            code=403,
+            message="无权限查看预约审计",
+            error_code=ReservationErrorCode.FORBIDDEN.value,
+        )
+
+    date_from = _normalize_date_filter(date_from, "date_from")
+    date_to = _normalize_date_filter(date_to, "date_to")
+    if date_from and date_to and date_from > date_to:
+        raise BusinessException(
+            code=422,
+            message="date_from 不能晚于 date_to",
+            error_code="VALIDATION_ERROR",
+        )
+
+    action_value = None
+    if action is not None:
+        try:
+            action_value = ReservationAction(action).value
+        except ValueError as exc:
+            raise BusinessException(
+                code=422,
+                message="action 取值不合法",
+                error_code="VALIDATION_ERROR",
+            ) from exc
+
+    conditions = []
+    if reservation_id is not None:
+        conditions.append(ReservationStatusHistory.reservation_id == reservation_id)
+    if user_id is not None:
+        conditions.append(Reservation.user_id == user_id)
+    if action_value is not None:
+        conditions.append(ReservationStatusHistory.action == action_value)
+    if date_from is not None:
+        conditions.append(Reservation.date >= date_from)
+    if date_to is not None:
+        conditions.append(Reservation.date <= date_to)
+
+    history_stmt = (
+        select(
+            ReservationStatusHistory,
+            User.name,
+            Lab.name,
+            Reservation.date,
+            Reservation.start_time,
+            Reservation.end_time,
+        )
+        .join(
+            Reservation,
+            Reservation.id == ReservationStatusHistory.reservation_id,
+        )
+        .join(User, User.id == Reservation.user_id)
+        .join(Lab, Lab.id == Reservation.lab_id)
+        .where(*conditions)
+        .options(selectinload(ReservationStatusHistory.actor))
+        .order_by(ReservationStatusHistory.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    # 每条row形式 (history, owner_name, lab_name, res_date, start_time, end_time)
+    rows = db.execute(history_stmt).all()
+
+    total = db.scalar(
+        select(func.count())
+        .select_from(ReservationStatusHistory)
+        .join(
+            Reservation,
+            Reservation.id == ReservationStatusHistory.reservation_id,
+        )
+        .join(User, User.id == Reservation.user_id)
+        .join(Lab, Lab.id == Reservation.lab_id)
+        .where(*conditions)
+    )
+
+    items = []
+    for history, owner_name, lab_name, res_date, start_time, end_time in rows:
+        items.append(
+            ReservationAuditHistoryItem(
+                id=history.id,
+                reservation_id=history.reservation_id,
+                action=history.action,
+                from_status=history.from_status,
+                to_status=history.to_status,
+                reason=history.reason,
+                actor_name=history.actor.name if history.actor else None,
+                request_id=history.request_id,
+                create_time=history.create_time,
+                owner_name=owner_name,
+                lab_name=lab_name,
+                date=res_date,
+                start_time=start_time,
+                end_time=end_time,
+            )
+        )
+    return PageResponse(list=items, total=total or 0)
 
 
 def cancel_reservation(

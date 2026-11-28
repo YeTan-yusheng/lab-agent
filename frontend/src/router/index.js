@@ -78,6 +78,14 @@ const router = createRouter({
           }
         },
         {
+          path: 'reservation-audit',
+          name: 'ReservationAudit',
+          component: () => import('@/views/ReservationAudit.vue'),
+          meta: {
+            requiredCapabilities: [Capability.AUDIT_RESERVATION]
+          }
+        },
+        {
           path: 'ai-chat',
           name: 'AiChat',
           component: () => import('@/views/AiChat.vue'),
