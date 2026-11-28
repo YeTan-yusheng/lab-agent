@@ -88,6 +88,7 @@ describe('Layout notification entry', () => {
 
     expect(mocks.startPolling).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('2')
+    expect(wrapper.text()).toContain('预约审计')
   })
 
   it('opens the notification center and stops polling on unmount', async () => {

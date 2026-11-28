@@ -11,6 +11,7 @@ vi.mock('@/utils/request', () => ({
 import {
   auditReservationApi,
   cancelReservationApi,
+  getAuditHistoryApi,
   getAuditPendingCountApi,
   getReservationHistoryApi
 } from '@/api/reservation'
@@ -76,6 +77,17 @@ describe('reservation API 协议', () => {
     expect(requestMock).toHaveBeenLastCalledWith({
       url: '/api/reservation/audit/pending-count',
       method: 'get'
+    })
+  })
+
+  it('提供跨预约审计历史接口', async () => {
+    const params = { page: 1, page_size: 10, action: 'approve' }
+    await getAuditHistoryApi(params)
+
+    expect(requestMock).toHaveBeenLastCalledWith({
+      url: '/api/reservation/audit/history',
+      method: 'get',
+      params
     })
   })
 })
